@@ -167,19 +167,7 @@
     <ClInclude Include="..\..\trionan.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\xzlib.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\buf.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\enc.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\libxml.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\save.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\timsort.h">

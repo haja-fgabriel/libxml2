@@ -142,8 +142,6 @@
     <ClCompile Include="..\..\xpointer.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\buf.h" />
-    <ClInclude Include="..\..\enc.h" />
     <ClInclude Include="..\..\include\libxml\c14n.h" />
     <ClInclude Include="..\..\include\libxml\catalog.h" />
     <ClInclude Include="..\..\include\libxml\chvalid.h" />
@@ -192,13 +190,11 @@
     <ClInclude Include="..\..\include\libxml\xpointer.h" />
     <ClInclude Include="..\..\include\wsockcompat.h" />
     <ClInclude Include="..\..\libxml.h" />
-    <ClInclude Include="..\..\save.h" />
     <ClInclude Include="..\..\timsort.h" />
     <ClInclude Include="..\..\trio.h" />
     <ClInclude Include="..\..\triodef.h" />
     <ClInclude Include="..\..\trionan.h" />
     <ClInclude Include="..\..\win32\config.h" />
-    <ClInclude Include="..\..\xzlib.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\..\win32\libxml2.rc" />
