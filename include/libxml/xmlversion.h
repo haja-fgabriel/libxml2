@@ -29,21 +29,21 @@ XMLPUBFUN void XMLCALL xmlCheckVersion(int version);
  *
  * the version string like "1.2.3"
  */
-#define LIBXML_DOTTED_VERSION "2.10.2"
+#define LIBXML_DOTTED_VERSION "2.10.3"
 
 /**
  * LIBXML_VERSION:
  *
  * the version number: 1.2.3 value is 10203
  */
-#define LIBXML_VERSION 21002
+#define LIBXML_VERSION 21003
 
 /**
  * LIBXML_VERSION_STRING:
  *
  * the version number string, 1.2.3 value is "10203"
  */
-#define LIBXML_VERSION_STRING "21002"
+#define LIBXML_VERSION_STRING "21003"
 
 /**
  * LIBXML_VERSION_EXTRA:
@@ -58,7 +58,7 @@ XMLPUBFUN void XMLCALL xmlCheckVersion(int version);
  * Macro to check that the libxml version in use is compatible with
  * the version the software has been compiled against
  */
-#define LIBXML_TEST_VERSION xmlCheckVersion(21002);
+#define LIBXML_TEST_VERSION xmlCheckVersion(21003);
 
 #ifndef VMS
 #if 0
@@ -171,7 +171,7 @@ XMLPUBFUN void XMLCALL xmlCheckVersion(int version);
  *
  * Whether the FTP support is configured in
  */
-#if 1
+#if 0
 #define LIBXML_FTP_ENABLED
 #endif
 
@@ -207,7 +207,7 @@ XMLPUBFUN void XMLCALL xmlCheckVersion(int version);
  *
  * Whether the deprecated APIs are compiled in for compatibility
  */
-#if 1
+#if 0
 #define LIBXML_LEGACY_ENABLED
 #endif
 
@@ -313,7 +313,7 @@ XMLPUBFUN void XMLCALL xmlCheckVersion(int version);
 /**
  * LIBXML_DEBUG_RUNTIME:
  *
- * Whether the runtime debugging is configured in
+ * Removed
  */
 #if 0
 #define LIBXML_DEBUG_RUNTIME
