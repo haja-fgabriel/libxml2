@@ -39,6 +39,7 @@
 #endif
 
 #ifdef LIBXML_XPATH_ENABLED
+#pragma message("INFO: LIBXML_XPATH_ENABLED is defined.")
 #include <libxml/xpath.h>
 #include <libxml/xpathInternals.h>
 #ifdef LIBXML_XPTR_ENABLED
@@ -47,6 +48,7 @@
 #endif
 
 #ifdef LIBXML_SCHEMAS_ENABLED
+#pragma message("INFO: LIBXML_SCHEMAS_ENABLED is defined.")
 #include <libxml/relaxng.h>
 #include <libxml/xmlschemas.h>
 #include <libxml/xmlschemastypes.h>
@@ -2962,6 +2964,8 @@ xpathDocTest(const char *filename,
     return(ret);
 }
 
+
+
 #ifdef LIBXML_XPTR_ENABLED
 /**
  * xptrDocTest:
@@ -3450,7 +3454,14 @@ schemasOneTest(const char *sch,
     /*
      * Test both memory and streaming validation.
      */
-    for (i = 0; i < 2; i++) {
+
+#ifdef LIBXML_XPATH_ENABLED
+    const int testCount = 3;
+#else
+    const int testCount = 2;
+#endif
+
+    for (i = 0; i < testCount; i++) {
         xmlSchemaValidCtxtPtr ctxt;
         int validResult = 0;
         FILE *schemasOutput;
@@ -3468,6 +3479,12 @@ schemasOneTest(const char *sch,
             return(-1);
         }
 
+        switch(i) {
+            case 0: printf("INFO: running memory tests for schemas...\n"); break;
+            case 1: printf("INFO: running streaming validation tests for schemas...\n"); break;
+            case 2: printf("INFO: running XPath verification tests for schemas...\n"); break;
+        };
+
         if (i == 0) {
             xmlDocPtr doc;
 
@@ -3478,8 +3495,15 @@ schemasOneTest(const char *sch,
             }
             validResult = xmlSchemaValidateDoc(ctxt, doc);
             xmlFreeDoc(doc);
-        } else {
+        } else if (i == 1) {
             validResult = xmlSchemaValidateFile(ctxt, filename, options);
+        } else {
+            /* TODO load XPath queries from a file */
+            printf("Running XPath verification against schema tests...\n");
+            xmlXPathContextPtr xpathContext;
+            xmlChar* query = "//GR.SEQ";
+
+            validResult = xmlSchemaVerifyXPath(ctxt, query, xpathContext);
         }
 
         if (validResult == 0) {

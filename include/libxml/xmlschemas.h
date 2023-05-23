@@ -18,6 +18,12 @@
 
 #include <libxml/tree.h>
 
+#ifdef LIBXML_XPATH_ENABLED
+
+#include <libxml/xpath.h>
+
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -218,6 +224,15 @@ XMLPUBFUN int
 
 XMLPUBFUN xmlParserCtxtPtr
 	    xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt);
+
+#ifdef LIBXML_XPATH_ENABLED
+
+XMLPUBFUN int
+		xmlSchemaVerifyXPath (xmlSchemaValidCtxtPtr ctxt,
+					const xmlChar *str,
+					xmlXPathContextPtr ctx);
+
+#endif /* LIBXML_XPATH_ENABLED */
 
 /*
  * Interface to insert Schemas SAX validation in a SAX stream

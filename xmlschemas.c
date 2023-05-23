@@ -75,6 +75,9 @@
 #ifdef LIBXML_READER_ENABLED
 #include <libxml/xmlreader.h>
 #endif
+#ifdef LIBXML_XPATH_ENABLED
+#include <libxml/xpath.h>
+#endif
 
 #include "private/error.h"
 #include "private/string.h"
@@ -29202,7 +29205,7 @@ done:
  */
 int
 xmlSchemaValidateFile(xmlSchemaValidCtxtPtr ctxt,
-                      const char * filename,
+				const char * filename,
 		      int options ATTRIBUTE_UNUSED)
 {
     int ret;
@@ -29238,5 +29241,47 @@ xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt)
         return(NULL);
     return (ctxt->parserCtxt);
 }
+
+#ifdef LIBXML_XPATH_ENABLED
+
+/**
+ * xmlSchemaVerifyXPath:
+ * @ctxt: a schema validation context
+ * @str: the XPath query
+ * @ctx: the XPath context
+ * 
+ * Verify if the given XPath query is satisfiable on the given schema.
+*/
+int 
+xmlSchemaVerifyXPath (xmlSchemaValidCtxtPtr ctxt,
+					const xmlChar *str,
+					xmlXPathContextPtr ctx) 
+{
+	int ret;
+	if ((ctxt == NULL) || (str == NULL) || (ctx == NULL)) {
+		return (-1);
+	}
+
+	if (xmlSchemaIsValid(ctxt) <= 0) {
+		return (-1);
+	}
+
+	xmlXPathCompExprPtr compiledXPath = xmlXPathCtxtCompile(ctx, str);
+	if (compiledXPath == NULL) {
+		return (-1);
+	}
+
+	/* TODO build the closure of the XML schema  */
+
+
+	/* TODO code that checks the XPath query on the XML schema */
+
+cleanup:
+	xmlXPathFreeCompExpr(compiledXPath);
+
+	return 1;
+}
+
+#endif /* LIBXML_XPATH_ENABLED */
 
 #endif /* LIBXML_SCHEMAS_ENABLED */
