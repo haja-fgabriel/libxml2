@@ -29251,6 +29251,8 @@ xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt)
  * @ctx: the XPath context
  * 
  * Verify if the given XPath query is satisfiable on the given schema.
+ * 
+ * Returns 1 if it is satisfiable or 0 if it doesn't.
 */
 int 
 xmlSchemaVerifyXPath (xmlSchemaValidCtxtPtr ctxt,
