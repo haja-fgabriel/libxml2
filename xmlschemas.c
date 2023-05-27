@@ -29253,6 +29253,8 @@ xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt)
  * Verify if the given XPath query is satisfiable on the given schema.
  * 
  * Returns 1 if it is satisfiable or 0 if it doesn't.
+ * Other error codes:
+ *   -1 if any of the arguments
 */
 int 
 xmlSchemaVerifyXPath (xmlSchemaValidCtxtPtr ctxt,
@@ -29265,7 +29267,7 @@ xmlSchemaVerifyXPath (xmlSchemaValidCtxtPtr ctxt,
 	}
 
 	if (xmlSchemaIsValid(ctxt) <= 0) {
-		return (-1);
+		return (-2);
 	}
 
 	xmlXPathCompExprPtr compiledXPath = xmlXPathCtxtCompile(ctx, str);
