@@ -15,14 +15,9 @@
 #include <libxml/xmlversion.h>
 
 #ifdef LIBXML_SCHEMAS_ENABLED
+#pragma message("LIBXML_SCHEMAS_ENABLED is defined.")
 
 #include <libxml/tree.h>
-
-#ifdef LIBXML_XPATH_ENABLED
-
-#include <libxml/xpath.h>
-
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -228,9 +223,8 @@ XMLPUBFUN xmlParserCtxtPtr
 #ifdef LIBXML_XPATH_ENABLED
 
 XMLPUBFUN int
-		xmlSchemaVerifyXPath (xmlSchemaValidCtxtPtr ctxt,
-					const xmlChar *str,
-					xmlXPathContextPtr ctx);
+            xmlSchemaVerifyXPath        (xmlSchemaValidCtxtPtr ctxt,
+                                         const xmlChar *str);
 
 #endif /* LIBXML_XPATH_ENABLED */
 

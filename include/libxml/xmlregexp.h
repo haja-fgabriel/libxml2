@@ -45,6 +45,25 @@ typedef xmlRegExecCtxt *xmlRegExecCtxtPtr;
 extern "C" {
 #endif
 
+
+/*
+ * Declaration of transitive closures for finite automata
+ */
+typedef struct _xmlAutomataTransitiveClosure xmlAutomataTransitiveClosure;
+typedef xmlAutomataTransitiveClosure* xmlAutomataTransitiveClosurePtr;
+
+XMLPUBFUN xmlAutomataTransitiveClosurePtr
+                    xmlAutomataNewTransitiveClosure();
+
+XMLPUBFUN void
+                    xmlAutomataFreeTransitiveClosure(
+                                xmlAutomataTransitiveClosurePtr closure);
+
+XMLPUBFUN int       xmlAutomataTransitiveClosureGetError(xmlAutomataTransitiveClosurePtr closure);
+
+XMLPUBFUN int       xmlRegexpAddToTransitiveClosure(const xmlRegexpPtr regexp,
+                                xmlAutomataTransitiveClosurePtr closure);
+
 /*
  * The POSIX like API
  */

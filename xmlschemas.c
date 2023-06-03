@@ -75,7 +75,7 @@
 #ifdef LIBXML_READER_ENABLED
 #include <libxml/xmlreader.h>
 #endif
-#ifdef LIBXML_XPATH_ENABLED
+#ifdef libxml_xpath_enabled
 #include <libxml/xpath.h>
 #endif
 
@@ -29244,13 +29244,86 @@ xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt)
 
 #ifdef LIBXML_XPATH_ENABLED
 
+static void
+xmlSchemaAddTypeToTransitiveClosure(void* payload, void* output,
+    const xmlChar* name ATTRIBUTE_UNUSED)
+{
+    xmlSchemaTypePtr type = (xmlSchemaTypePtr)payload;
+    xmlAutomataTransitiveClosurePtr closure = 
+        (xmlAutomataTransitiveClosurePtr)output;
+
+    if (type == NULL) {
+        fprintf(output, "Type: NULL\n");
+        return;
+    }
+
+    switch (type->type) {
+    case XML_SCHEMA_TYPE_BASIC: printf("[basic] "); break;
+    case XML_SCHEMA_TYPE_SIMPLE: printf("[simple] "); break;
+    case XML_SCHEMA_TYPE_COMPLEX: printf("[complex] "); break;
+    case XML_SCHEMA_TYPE_SEQUENCE: printf("[sequence] "); break;
+    case XML_SCHEMA_TYPE_CHOICE: printf("[choice] "); break;
+    case XML_SCHEMA_TYPE_ALL: printf("[all] "); break;
+    case XML_SCHEMA_TYPE_UR: printf("[ur] "); break;
+    case XML_SCHEMA_TYPE_RESTRICTION: printf("[restriction] "); break;
+    case XML_SCHEMA_TYPE_EXTENSION: printf("[extension] "); break;
+    default: printf("[unknown type %d] ", type->type); break;
+    }
+    
+    printf("We have type.\n");
+
+    switch (type->contentType) {
+    case XML_SCHEMA_CONTENT_UNKNOWN: printf("[unknown] "); break;
+    case XML_SCHEMA_CONTENT_EMPTY: printf("[empty] "); break;
+    case XML_SCHEMA_CONTENT_ELEMENTS: printf("[element] "); break;
+    case XML_SCHEMA_CONTENT_MIXED: printf("[mixed] "); break;
+    case XML_SCHEMA_CONTENT_MIXED_OR_ELEMENTS:
+        /* not used. */
+        break;
+    case XML_SCHEMA_CONTENT_BASIC: printf("[basic] "); break;
+    case XML_SCHEMA_CONTENT_SIMPLE: printf("[simple] "); break;
+    case XML_SCHEMA_CONTENT_ANY: printf("[any] "); break;
+    }
+    printf("\n");
+    if (type->base != NULL) {
+        printf("  base type: '%s'", type->base);
+        if (type->baseNs != NULL)
+            printf(" ns '%s'\n", type->baseNs);
+        else
+            printf("\n");
+    }
+    /*if (type->attrUses != NULL) xmlSchemaAttrUsesDump(type->attrUses, output);
+    if (type->annot != NULL) xmlSchemaAnnotDump(output, type->annot);*/
+#ifdef DUMP_CONTENT_MODEL
+    if ((type->type == XML_SCHEMA_TYPE_COMPLEX) &&
+        (type->subtypes != NULL)) {
+        if (xmlRegexpAddToTransitiveClosure(type->contModel, closure) < 0) {
+            return;
+        }
+    }
+#endif
+}
+
+static void
+xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
+    const xmlChar* name ATTRIBUTE_UNUSED,
+    const xmlChar* namespace ATTRIBUTE_UNUSED,
+    const xmlChar* context ATTRIBUTE_UNUSED)
+{
+    xmlSchemaTypePtr type = (xmlSchemaTypePtr)payload;
+    xmlAutomataTransitiveClosurePtr closure = (xmlAutomataTransitiveClosurePtr)output;
+
+    printf("We have element.\n");
+}
+
 /**
  * xmlSchemaVerifyXPath:
  * @ctxt: a schema validation context
- * @str: the XPath query
- * @ctx: the XPath context
+ * @str: the XPath query (must be absolute)
  * 
  * Verify if the given XPath query is satisfiable on the given schema.
+ *   An XPath query is satisfiable if there is any XML document that
+ *   returns at least one entry using the @str query.
  * 
  * Returns 1 if it is satisfiable or 0 if it doesn't.
  * Other error codes:
@@ -29258,33 +29331,34 @@ xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt)
 */
 int 
 xmlSchemaVerifyXPath (xmlSchemaValidCtxtPtr ctxt,
-					const xmlChar *str,
-					xmlXPathContextPtr ctx) 
+					const xmlChar *str) 
 {
-	int ret;
-	if ((ctxt == NULL) || (str == NULL) || (ctx == NULL)) {
-		return (-1);
-	}
+    xmlSchemaPtr schema = ctxt->schema;
+    xmlAutomataTransitiveClosurePtr closure = xmlAutomataNewTransitiveClosure();
+    if (closure == NULL) {
+        /* closure could not be successfully allocated */
+        return (-1);
+    }
 
-	if (xmlSchemaIsValid(ctxt) <= 0) {
-		return (-2);
-	}
+    xmlHashScanFull(schema->elemDecl, xmlSchemaAddNodeToTransitiveClosure, closure);
+    if (xmlAutomataTransitiveClosureGetError(closure)) {
+        xmlAutomataFreeTransitiveClosure(closure);
+        return (-2);
+    }
 
-	xmlXPathCompExprPtr compiledXPath = xmlXPathCtxtCompile(ctx, str);
-	if (compiledXPath == NULL) {
-		return (-1);
-	}
+    xmlHashScan(schema->typeDecl, xmlSchemaAddTypeToTransitiveClosure, closure);
 
-	/* TODO build the closure of the XML schema  */
+    FILE* f = fopen("formex_dump.txt", "w");
+    xmlSchemaDump(f, ctxt->schema);
+    fclose(f);
 
-
-	/* TODO code that checks the XPath query on the XML schema */
-
-cleanup:
-	xmlXPathFreeCompExpr(compiledXPath);
-
-	return 1;
+    /* TODO verification for relative XPath queries*/
+    int ret = xmlXPathIsSatisfiableOnSchema(NULL, str, ctxt);
+    xmlAutomataFreeTransitiveClosure(closure);
+    return ret;
 }
+
+
 
 #endif /* LIBXML_XPATH_ENABLED */
 
