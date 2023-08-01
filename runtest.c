@@ -39,7 +39,6 @@
 #endif
 
 #ifdef LIBXML_XPATH_ENABLED
-#pragma message("INFO: LIBXML_XPATH_ENABLED is defined.")
 #include <libxml/xpath.h>
 #include <libxml/xpathInternals.h>
 #ifdef LIBXML_XPTR_ENABLED
@@ -48,7 +47,6 @@
 #endif
 
 #ifdef LIBXML_SCHEMAS_ENABLED
-#pragma message("INFO: LIBXML_SCHEMAS_ENABLED is defined.")
 #include <libxml/relaxng.h>
 #include <libxml/xmlschemas.h>
 #include <libxml/xmlschemastypes.h>
@@ -3500,10 +3498,24 @@ schemasOneTest(const char *sch,
         } else {
             /* TODO load XPath queries from a file */
             printf("Running XPath verification against schema tests...\n");
-            xmlXPathContextPtr xpathContext;
-            xmlChar* query = "//GR.SEQ";
+            xmlChar* query = "//GR.SEQ/TBL/ROW";
 
-            validResult = xmlSchemaVerifyXPath(ctxt, query, xpathContext);
+            xmlSchemaVerifyXPathCtxtPtr verifyCtxt = xmlSchemaNewVerifyXPathCtxt(ctxt, query);
+            if (verifyCtxt == NULL) {
+                fprintf(stderr, "Error allocating memory for XPath verification context on schema %s\n", sch);
+                unlink(temp);
+                xmlSchemaFreeValidCtxt(ctxt);
+                continue;
+            }
+
+            validResult = xmlSchemaVerifyXPath(verifyCtxt);
+
+            xmlSchemaFreeVerifyXPathCtxt(verifyCtxt);
+
+            /* Skip file comparison, as we are going to treat it differently */
+            unlink(temp);
+            xmlSchemaFreeValidCtxt(ctxt);
+            continue;
         }
 
         if (validResult == 0) {

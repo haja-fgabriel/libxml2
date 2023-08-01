@@ -75,7 +75,7 @@
 #ifdef LIBXML_READER_ENABLED
 #include <libxml/xmlreader.h>
 #endif
-#ifdef libxml_xpath_enabled
+#ifdef LIBXML_XPATH_ENABLED
 #include <libxml/xpath.h>
 #endif
 
@@ -1083,6 +1083,32 @@ struct _xmlIDCHashEntry {
     xmlIDCHashEntryPtr next; /* next item with same hash */
     int index;               /* index into associated item list */
 };
+
+
+#ifdef LIBXML_XPATH_ENABLED
+
+
+/**
+ * xmlSchemaVerifyXPathCtxt:
+ *
+ * an entry in hash tables to quickly look up keys/uniques
+ */
+struct _xmlSchemaVerifyXPathCtxt {
+    int type;               /* Reserved for future use */
+    xmlSchemaValidCtxtPtr schemaCtxt;
+    const char* xpath;
+
+    xmlAutomataPtr graph;
+    xmlAutomataStatePtr start;
+    xmlAutomataStatePtr end;
+
+    void* errCtxt;
+    xmlSchemaValidityErrorFunc error;
+    xmlSchemaValidityWarningFunc warning;
+
+};
+
+#endif /* LIBXML_XPATH_ENABLED */
 
 /************************************************************************
  *									*
@@ -13276,7 +13302,7 @@ xmlSchemaBuildContentModel(xmlSchemaTypePtr type,
     * Build the automaton.
     */
     xmlSchemaBuildAContentModel(ctxt, WXS_TYPE_PARTICLE(type));
-    xmlAutomataSetFinalState(ctxt->am, ctxt->state);
+     xmlAutomataSetFinalState(ctxt->am, ctxt->state);
     type->contModel = xmlAutomataCompile(ctxt->am);
     if (type->contModel == NULL) {
         xmlSchemaPCustomErr(ctxt,
@@ -13562,7 +13588,7 @@ xmlSchemaGetPrimitiveType(xmlSchemaTypePtr type)
     }
 
     return (NULL);
-}
+} 
 
 #if 0
 /**
@@ -29147,48 +29173,48 @@ xmlSchemaValidateStream(xmlSchemaValidCtxtPtr ctxt,
 {
     xmlParserCtxtPtr pctxt = NULL;
     xmlParserInputPtr inputStream = NULL;
-    int ret;
+int ret;
 
-    if ((ctxt == NULL) || (input == NULL))
+if ((ctxt == NULL) || (input == NULL))
+return (-1);
+
+/*
+ * prepare the parser
+ */
+if (sax != NULL) {
+    pctxt = xmlNewSAXParserCtxt(sax, user_data);
+    if (pctxt == NULL)
         return (-1);
-
-    /*
-     * prepare the parser
-     */
-    if (sax != NULL) {
-        pctxt = xmlNewSAXParserCtxt(sax, user_data);
-        if (pctxt == NULL)
-            return (-1);
     } else {
-        pctxt = xmlNewParserCtxt();
-        if (pctxt == NULL)
-            return (-1);
-        /* We really want pctxt->sax to be NULL here. */
-        xmlFree(pctxt->sax);
-        pctxt->sax = NULL;
-    }
+    pctxt = xmlNewParserCtxt();
+    if (pctxt == NULL)
+        return (-1);
+    /* We really want pctxt->sax to be NULL here. */
+    xmlFree(pctxt->sax);
+    pctxt->sax = NULL;
+}
 #if 0
-    if (options)
-        xmlCtxtUseOptions(pctxt, options);
+if (options)
+xmlCtxtUseOptions(pctxt, options);
 #endif
 
-    inputStream = xmlNewIOInputStream(pctxt, input, enc);;
-    if (inputStream == NULL) {
-        ret = -1;
-	goto done;
-    }
-    inputPush(pctxt, inputStream);
+inputStream = xmlNewIOInputStream(pctxt, input, enc);;
+if (inputStream == NULL) {
+    ret = -1;
+    goto done;
+}
+inputPush(pctxt, inputStream);
 
-    ctxt->enc = enc;
+ctxt->enc = enc;
 
-    ret = xmlSchemaValidateStreamInternal(ctxt, pctxt);
+ret = xmlSchemaValidateStreamInternal(ctxt, pctxt);
 
 done:
-    /* cleanup */
-    if (pctxt != NULL) {
-	xmlFreeParserCtxt(pctxt);
-    }
-    return (ret);
+/* cleanup */
+if (pctxt != NULL) {
+    xmlFreeParserCtxt(pctxt);
+}
+return (ret);
 }
 
 /**
@@ -29206,7 +29232,7 @@ done:
 int
 xmlSchemaValidateFile(xmlSchemaValidCtxtPtr ctxt,
 				const char * filename,
-		      int options ATTRIBUTE_UNUSED)
+    int options ATTRIBUTE_UNUSED)
 {
     int ret;
     xmlParserCtxtPtr pctxt = NULL;
@@ -29216,7 +29242,7 @@ xmlSchemaValidateFile(xmlSchemaValidCtxtPtr ctxt,
 
     pctxt = xmlCreateURLParserCtxt(filename, 0);
     if (pctxt == NULL)
-	return (-1);
+        return (-1);
     /* We really want pctxt->sax to be NULL here. */
     xmlFree(pctxt->sax);
     pctxt->sax = NULL;
@@ -29242,7 +29268,65 @@ xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt)
     return (ctxt->parserCtxt);
 }
 
+
 #ifdef LIBXML_XPATH_ENABLED
+
+xmlSchemaVerifyXPathCtxtPtr
+xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str)
+{
+    xmlSchemaVerifyXPathCtxtPtr ctxt = xmlMalloc(sizeof(xmlSchemaVerifyXPathCtxt));
+    if (ctxt == NULL) {
+        return NULL;
+    }
+    memset(ctxt, 0, sizeof(xmlSchemaVerifyXPathCtxt));
+
+    xmlChar* xpathCopy = xmlStrdup(str);
+    if (xpathCopy == NULL) {
+        free(ctxt);
+        return NULL;
+    }
+    
+    ctxt->schemaCtxt = schemaCtxt;
+    ctxt->xpath = xpathCopy;
+    return ctxt;
+}
+
+void
+xmlSchemaFreeVerifyXPathCtxt(xmlSchemaVerifyXPathCtxtPtr ctxt)
+{
+    xmlFree(ctxt->xpath);
+    xmlFree(ctxt);
+}
+
+void
+xmlSchemaSetVerifyXPathErrors(xmlSchemaVerifyXPathCtxtPtr ctxt,
+    xmlSchemaValidityErrorFunc err,
+    xmlSchemaValidityWarningFunc warn,
+    void* ctx)
+{
+    if (ctxt == NULL) {
+        return;
+    }
+    ctxt->error = err;
+    ctxt->warning = warn;
+    ctxt->errCtxt = ctx;
+}
+
+void
+xmlSchemaGetVerifyXPathErrors(xmlSchemaVerifyXPathCtxtPtr ctxt,
+    xmlSchemaValidityErrorFunc* err,
+    xmlSchemaValidityWarningFunc* warn,
+    void** ctx)
+{
+    if (ctxt == NULL)
+        return;
+    if (err)
+        *err = ctxt->error;
+    if (warn)
+        *warn = ctxt->warning;
+    if (ctx)
+        *ctx = ctxt->errCtxt;
+}
 
 static void
 xmlSchemaAddTypeToTransitiveClosure(void* payload, void* output,
@@ -29311,9 +29395,29 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
     const xmlChar* context ATTRIBUTE_UNUSED)
 {
     xmlSchemaTypePtr type = (xmlSchemaTypePtr)payload;
-    xmlAutomataTransitiveClosurePtr closure = (xmlAutomataTransitiveClosurePtr)output;
+    xmlSchemaVerifyXPathCtxtPtr ctxt = (xmlSchemaVerifyXPathCtxtPtr)output;
+    if (xmlStrEqual(type->node->parent->name, "schema")) {
+        xmlAutomataStatePtr state = xmlAutomataNewTransition(
+            ctxt->graph, ctxt->start, ctxt->end, type->name, type);
+        if (state == NULL) {
+            fprintf(stderr, "oops, cannot add transition in schema graph\n");
+            /* WTF should I do here? */
+            /*__xmlRaiseError(NULL, ctxt->error, data, ctxt,
+                type->node, XML_FROM_SCHEMASV,
+                error, errorLevel, file, line,
+                (const char*)str1, (const char*)str2,
+                (const char*)str3, 0, col, msg, str1, str2, str3, str4);
+            __xmlRaiseError(NULL, ctxt->error, )
+            xmlGenericError(xmlGenericErrorContext, "Error while adding transition in schema graph.");*/
+            /* TODO raise error */
+        }
+    }
+    else {
+        printf("ok, we have element that cannot be root in the XML document\n");
+    }
 
-    printf("We have element.\n");
+    /* TODO TBD */
+    return;
 }
 
 /**
@@ -29330,31 +29434,53 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
  *   -1 if any of the arguments
 */
 int 
-xmlSchemaVerifyXPath (xmlSchemaValidCtxtPtr ctxt,
-					const xmlChar *str) 
+xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt) 
 {
-    xmlSchemaPtr schema = ctxt->schema;
+    if (ctxt == NULL) {
+        return (-1);
+    }
+    xmlSchemaPtr schema = ctxt->schemaCtxt->schema;
+
+    ctxt->graph = xmlNewAutomata();
+    if (ctxt->graph == NULL) {
+        xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
+        return -1;
+    }
+
+    ctxt->start = xmlAutomataGetInitState(ctxt->graph);
+    ctxt->end = xmlAutomataNewState(ctxt->graph);
+    if (ctxt->end == NULL) {
+        xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
+        xmlFreeAutomata(ctxt->graph);
+        return (-1);
+    }
+
     xmlAutomataTransitiveClosurePtr closure = xmlAutomataNewTransitiveClosure();
     if (closure == NULL) {
+        if (ctxt->error) {
+            // TODO warn about the failing allocation for the closure
+            xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
+            
+        }
+        xmlFreeAutomata(ctxt->graph);
         /* closure could not be successfully allocated */
         return (-1);
     }
 
-    xmlHashScanFull(schema->elemDecl, xmlSchemaAddNodeToTransitiveClosure, closure);
+    xmlHashScanFull(schema->elemDecl, xmlSchemaAddNodeToTransitiveClosure, ctxt);
     if (xmlAutomataTransitiveClosureGetError(closure)) {
         xmlAutomataFreeTransitiveClosure(closure);
+        xmlFreeAutomata(ctxt->graph);
         return (-2);
     }
 
     xmlHashScan(schema->typeDecl, xmlSchemaAddTypeToTransitiveClosure, closure);
 
-    FILE* f = fopen("formex_dump.txt", "w");
-    xmlSchemaDump(f, ctxt->schema);
-    fclose(f);
-
     /* TODO verification for relative XPath queries*/
-    int ret = xmlXPathIsSatisfiableOnSchema(NULL, str, ctxt);
+    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->schemaCtxt);
+
     xmlAutomataFreeTransitiveClosure(closure);
+    xmlFreeAutomata(ctxt->graph);
     return ret;
 }
 

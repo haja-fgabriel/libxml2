@@ -222,9 +222,30 @@ XMLPUBFUN xmlParserCtxtPtr
 
 #ifdef LIBXML_XPATH_ENABLED
 
+typedef struct _xmlSchemaVerifyXPathCtxt xmlSchemaVerifyXPathCtxt;
+typedef xmlSchemaVerifyXPathCtxt* xmlSchemaVerifyXPathCtxtPtr;
+
+XMLPUBFUN xmlSchemaVerifyXPathCtxtPtr
+            xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr ctxt,
+                const xmlChar* str);
+
+XMLPUBFUN void
+            xmlSchemaFreeVerifyXPathCtxt(xmlSchemaVerifyXPathCtxtPtr ctxt);
+
+XMLPUBFUN void
+            xmlSchemaSetVerifyXPathErrors(xmlSchemaVerifyXPathCtxtPtr ctxt,
+                                          xmlSchemaValidityErrorFunc err,
+                                          xmlSchemaValidityWarningFunc warn,
+                                          void* ctx);
+
+XMLPUBFUN void
+            xmlSchemaGetVerifyXPathErrors(xmlSchemaVerifyXPathCtxtPtr ctxt,
+                                          xmlSchemaValidityErrorFunc* err,
+                                          xmlSchemaValidityWarningFunc* warn,
+                                          void** ctx);
+
 XMLPUBFUN int
-            xmlSchemaVerifyXPath        (xmlSchemaValidCtxtPtr ctxt,
-                                         const xmlChar *str);
+            xmlSchemaVerifyXPath         (xmlSchemaVerifyXPathCtxtPtr ctxt);
 
 #endif /* LIBXML_XPATH_ENABLED */
 
