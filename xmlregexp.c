@@ -6564,7 +6564,7 @@ struct _xmlAutomataTransitiveClosure {
     int nbAtoms;
     xmlRegAtomPtr* atoms;
     int nbCounters;
-    xmlRegCounter* counters;
+    xmlRegCounterPtr* counters;
     int determinist;
     int flags;
     /*
