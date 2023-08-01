@@ -32,6 +32,11 @@
 #ifdef HAVE_IO_H
 #include <io.h>
 #endif
+#ifndef _MSC_VER
+#ifdef HAVE_STDINT_H
+#include <stdint.h>
+#endif
+#endif
 #include <libxml/xmlmemory.h>
 #include <libxml/hash.h>
 #include <libxml/uri.h>
