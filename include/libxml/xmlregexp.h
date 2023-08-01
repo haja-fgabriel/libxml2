@@ -53,7 +53,7 @@ typedef struct _xmlAutomataTransitiveClosure xmlAutomataTransitiveClosure;
 typedef xmlAutomataTransitiveClosure* xmlAutomataTransitiveClosurePtr;
 
 XMLPUBFUN xmlAutomataTransitiveClosurePtr
-                    xmlAutomataNewTransitiveClosure();
+                    xmlAutomataNewTransitiveClosure(void);
 
 XMLPUBFUN void
                     xmlAutomataFreeTransitiveClosure(

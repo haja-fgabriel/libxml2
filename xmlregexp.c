@@ -6584,7 +6584,7 @@ struct _xmlAutomataTransitiveClosure {
  * Create a new instance of a transitive closure structure.
  */
 xmlAutomataTransitiveClosurePtr
-xmlAutomataNewTransitiveClosure()
+xmlAutomataNewTransitiveClosure(void)
 {
     xmlRegAtomPtr* atoms = NULL;
     xmlAutomataTransitiveClosurePtr closure = NULL;
