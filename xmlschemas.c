@@ -29458,7 +29458,7 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     xmlAutomataTransitiveClosurePtr closure = xmlAutomataNewTransitiveClosure();
     if (closure == NULL) {
         if (ctxt->error) {
-            // TODO warn about the failing allocation for the closure
+            /* TODO warn about the failing allocation for the closure */
             xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
             
         }
