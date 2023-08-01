@@ -29399,18 +29399,23 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
     if (xmlStrEqual(type->node->parent->name, "schema")) {
         xmlAutomataStatePtr state = xmlAutomataNewTransition(
             ctxt->graph, ctxt->start, ctxt->end, type->name, type);
+
         if (state == NULL) {
             fprintf(stderr, "oops, cannot add transition in schema graph\n");
             /* WTF should I do here? */
             /*__xmlRaiseError(NULL, ctxt->error, data, ctxt,
-                type->node, XML_FROM_SCHEMASV,
+                type->node, XML_FROM_SCHEMASVX,
                 error, errorLevel, file, line,
                 (const char*)str1, (const char*)str2,
                 (const char*)str3, 0, col, msg, str1, str2, str3, str4);
             __xmlRaiseError(NULL, ctxt->error, )
             xmlGenericError(xmlGenericErrorContext, "Error while adding transition in schema graph.");*/
             /* TODO raise error */
+            return;
         }
+
+
+        printf("ok transition is added\n");
     }
     else {
         printf("ok, we have element that cannot be root in the XML document\n");
@@ -29477,7 +29482,7 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     xmlHashScan(schema->typeDecl, xmlSchemaAddTypeToTransitiveClosure, closure);
 
     /* TODO verification for relative XPath queries*/
-    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->schemaCtxt);
+    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->graph);
 
     xmlAutomataFreeTransitiveClosure(closure);
     xmlFreeAutomata(ctxt->graph);
