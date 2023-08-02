@@ -568,7 +568,7 @@ XMLPUBFUN void
 XMLPUBFUN int
                     xmlXPathIsSatisfiableOnSchema(xmlXPathContextPtr ctx, 
                                                   const xmlChar* str, 
-                                                  xmlAutomataPtr ctxt);
+                                                  const xmlRegexpPtr closure);
 #endif /* LIBXML_XPATH_ENABLED and LIBXML_SCHEMAS_ENABLED */
 
 #endif /* LIBXML_XPATH_ENABLED */

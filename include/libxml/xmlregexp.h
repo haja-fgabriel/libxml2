@@ -47,24 +47,6 @@ extern "C" {
 
 
 /*
- * Declaration of transitive closures for finite automata
- */
-typedef struct _xmlAutomataTransitiveClosure xmlAutomataTransitiveClosure;
-typedef xmlAutomataTransitiveClosure* xmlAutomataTransitiveClosurePtr;
-
-XMLPUBFUN xmlAutomataTransitiveClosurePtr
-                    xmlAutomataNewTransitiveClosure(void);
-
-XMLPUBFUN void
-                    xmlAutomataFreeTransitiveClosure(
-                                xmlAutomataTransitiveClosurePtr closure);
-
-XMLPUBFUN int       xmlAutomataTransitiveClosureGetError(xmlAutomataTransitiveClosurePtr closure);
-
-XMLPUBFUN int       xmlRegexpAddToTransitiveClosure(const xmlRegexpPtr regexp,
-                                xmlAutomataTransitiveClosurePtr closure);
-
-/*
  * The POSIX like API
  */
 XMLPUBFUN xmlRegexpPtr
@@ -78,6 +60,13 @@ XMLPUBFUN void
 					 xmlRegexpPtr regexp);
 XMLPUBFUN int
 		    xmlRegexpIsDeterminist(xmlRegexpPtr comp);
+
+
+/*
+ * Additional functions
+ */
+XMLPUBFUN xmlRegexpPtr
+                    xmlRegexpBuildTransitiveClosure(xmlRegexpPtr comp);
 
 /**
  * xmlRegExecCallbacks:
@@ -125,6 +114,8 @@ XMLPUBFUN int
 					 int *nbneg,
 					 xmlChar **values,
 					 int *terminal);
+
+
 #ifdef LIBXML_EXPR_ENABLED
 /*
  * Formal regular expression handling

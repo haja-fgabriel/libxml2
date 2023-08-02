@@ -5786,6 +5786,88 @@ xmlRegFreeRegexp(xmlRegexpPtr regexp) {
     xmlFree(regexp);
 }
 
+/**
+ * xmlRegexpBuildTransitiveClosure
+ * @comp: a compact regular expression
+ * 
+ * If the regexp is represented in a compact form, return a new regexp 
+ * that contains its transitive closure.
+ */
+xmlRegexpPtr
+xmlRegexpBuildTransitiveClosure(xmlRegexpPtr comp)
+{
+    /* TODO implement for regular regexp form */
+    if (comp == NULL || comp->compact == NULL) {
+        return NULL;
+    }
+
+    xmlChar** stringMap = NULL;
+    void** transdata = NULL;
+    xmlRegexpPtr ret = NULL;
+    ret = (xmlRegexpPtr)xmlMalloc(sizeof(xmlRegexp));
+    if (ret == NULL) {
+        return(NULL);
+    }
+
+    memset(ret, 0, sizeof(xmlRegexp));
+    ret->nbAtoms = comp->nbAtoms;
+    ret->nbStates = comp->nbStates;
+    ret->nbCounters = comp->nbCounters;
+    ret->flags = comp->flags;
+    ret->nbstrings = comp->nbstrings;
+    ret->nbstates = comp->nbstates;
+
+    stringMap = (xmlChar**)xmlMalloc(sizeof(xmlChar*) * ret->nbstrings);
+    if (stringMap == NULL) {
+        xmlFree(ret);
+        return NULL;
+    }
+    memset(stringMap, 0, sizeof(xmlChar*) * ret->nbstrings);
+    for (int i = 0; i < ret->nbstrings; i++) {
+        stringMap[i] = xmlStrdup(comp->stringMap[i]);
+        if (stringMap[i] == NULL) {
+            goto exit_failure;
+        }
+    }
+    ret->stringMap = stringMap;
+
+    transdata = (void**)xmlMalloc(sizeof(void*) * ret->nbstates);
+    if (transdata == NULL) {
+        goto exit_failure;
+    }
+    errno_t retVal = memcpy_s(transdata, sizeof(void*) * ret->nbstates, 
+        comp->transdata, sizeof(void*) * comp->nbstates);
+    if (retVal != 0) {
+        goto exit_failure;
+    }
+    ret->transdata = transdata;
+
+
+    /* The actual building of the transitive closure using the Floyd-Warshall algorithm */
+    for (int k = 0; k < ret->nbStates; k++) {
+        for (int i = 0; i < ret->nbStates; i++) {
+            for (int j = 0; j < ret->nbStates; j++) {
+                ;
+            }
+        }
+    }
+    return ret;
+
+exit_failure:
+    if (transdata)
+        xmlFree(transdata);
+    if (stringMap) {
+        for (int i = 0; i < ret->nbstrings; i++) {
+            if (stringMap[i])
+                xmlFree(stringMap[i]);
+        }
+        xmlFree(stringMap);
+    }
+    if (ret) 
+        xmlFree(ret);
+    return NULL;
+}
+
 #ifdef LIBXML_AUTOMATA_ENABLED
 /************************************************************************
  *									*
@@ -6544,299 +6626,6 @@ xmlAutomataIsDeterminist(xmlAutomataPtr am) {
 
     ret = xmlFAComputesDeterminism(am);
     return(ret);
-}
-
-
-/************************************************************************
- *									*
- *		Transitive closure handling code			*
- *									*
- ************************************************************************/
-
-
-/*
-* The structure of a closure of an automata; extends xmlRegexp
-*/
-struct _xmlAutomataTransitiveClosure {
-    xmlChar* string;
-    int nbStates;
-    xmlRegStatePtr* states;
-    int nbAtoms;
-    xmlRegAtomPtr* atoms;
-    int nbCounters;
-    xmlRegCounterPtr counters;
-    int determinist;
-    int flags;
-    /*
-     * That's the compact form for determinists automatas
-     */
-    int nbstates;
-    int* compact;
-    void** transdata;
-    int nbstrings;
-    xmlChar** stringMap;
-    int error;
-};
-
-/**
- * xmlAutomataNewTransitiveClosure
- *
- * Create a new instance of a transitive closure structure.
- */
-xmlAutomataTransitiveClosurePtr
-xmlAutomataNewTransitiveClosure(void)
-{
-    xmlRegAtomPtr* atoms = NULL;
-    xmlAutomataTransitiveClosurePtr closure = NULL;
-    xmlRegStatePtr* states = NULL;
-    xmlRegCounter* counters = NULL;
-    
-    closure = (xmlAutomataTransitiveClosurePtr)xmlMalloc(sizeof(struct _xmlAutomataTransitiveClosure));
-    if (closure == NULL)
-        goto failure;
-
-    memset(closure, 0, sizeof(struct _xmlAutomataTransitiveClosure));
-    
-    atoms = xmlMalloc(0);
-    if (atoms == NULL)
-        goto failure;
-    
-    states = xmlMalloc(0);
-    if (states == NULL)
-        goto failure;
-
-    counters = xmlMalloc(0);
-    if (counters == NULL)
-        goto failure;
-    
-    closure->atoms = atoms;
-    closure->states = states;
-    closure->counters = counters;
-    closure->determinist = 1;
-
-    goto exit;
-
-failure:
-    if (atoms != NULL)
-        xmlFree(atoms);
-    if (states != NULL)
-        xmlFree(states);
-    if (counters != NULL)
-        xmlFree(counters);
-    if (closure != NULL) {
-        xmlFree(closure);
-        closure = NULL;
-    }
-
-exit:
-    return closure;
-}
-
-/**
- * xmlAutomataFreeTransitiveClosure
- * @closure a closure
- *
- * Deletes the instance of transitive closure structure.
- */
-void
-xmlAutomataFreeTransitiveClosure(xmlAutomataTransitiveClosurePtr closure)
-{
-    if (closure->atoms) {
-        for (int i = 0; i < closure->nbAtoms; i++) {
-            if (closure->atoms[i]) {
-                xmlFree(closure->atoms[i]);
-            }
-        }
-        xmlFree(closure->atoms);
-    }
-    if (closure->states) {
-        for (int i = 0; i < closure->nbStates; i++) {
-            if (closure->states[i]) {
-                if (closure->states[i]->transTo) {
-                    xmlFree(closure->states[i]->transTo);
-                }
-                xmlFree(closure->states[i]);
-            }
-        }
-        xmlFree(closure->states);
-    }
-    if (closure->counters)
-        xmlFree(closure->counters);
-    xmlFree(closure);
-}
-
-/**
- * xmlRegexpAddToTransitiveClosure
- * @regexp an automata
- * @closure the closure
- *
- * Adds an automata to the transitive closure instance, copying the list of states,
- * atoms and counters.
- */
-int
-xmlRegexpAddToTransitiveClosure(const xmlRegexpPtr regexp,
-    xmlAutomataTransitiveClosurePtr closure)
-{
-    if ((regexp == NULL) || (closure == NULL))
-        return (-2);
-
-    if (closure->error)
-        return (-3);
-
-    /* TODO add states and atoms to closure */
-    int nbAtoms = closure->nbAtoms;
-    int nbStates = closure->nbStates;
-    int nbCounters = closure->nbCounters;
-
-    /* Safely reallocate memory */
-    xmlRegAtomPtr* newAtomList = NULL;
-    xmlRegStatePtr* newStatesList = NULL;
-    xmlRegCounterPtr* newCountersList = NULL;
-    
-    newAtomList = xmlRealloc(closure->atoms, (nbAtoms + regexp->nbAtoms) * sizeof(xmlRegAtomPtr));
-    if (NULL == newAtomList) {
-        xmlGenericError(xmlGenericErrorContext,
-            "we have transitive closure realloc error for atoms\n");
-        goto failure;
-    }
-
-    newStatesList = xmlRealloc(closure->states, (nbStates + regexp->nbStates) * sizeof(xmlRegStatePtr));
-    if (NULL == newStatesList) {
-        xmlGenericError(xmlGenericErrorContext,
-            "we have transitive closure realloc error for states\n");
-        goto failure;
-    }
-
-    newCountersList = xmlRealloc(closure->counters, (nbCounters + regexp->nbCounters) * sizeof(xmlRegCounter));
-    if (NULL == newCountersList) {
-        xmlGenericError(xmlGenericErrorContext, 
-            "we have transitive closure realloc error for states\n");
-        goto failure;
-    }
-
-    /* Zero-initialise pointers to cloned atoms, for safe deallocation */
-    for (int i = 0; i < regexp->nbAtoms; i++) {
-        newAtomList[i + nbAtoms] = NULL;
-    }
-    for (int i = 0; i < regexp->nbStates; i++) {
-        newStatesList[i + nbStates] = NULL;
-    }
-    
-    /* Copy atoms from regexp */
-    for (int i = 0; i < regexp->nbAtoms; i++) {
-        xmlRegAtomPtr atom = regexp->atoms[i];
-        if (atom == NULL)
-            continue;
-
-        xmlRegAtomPtr newAtom = xmlMalloc(sizeof(struct _xmlRegAtom));
-        if (newAtom == NULL) {
-            /* rollback all changes if allocation is unsuccessful */
-            goto failure;
-        }
-
-        /* Set pointer to copied structure and actually copy */
-        newAtomList[i + closure->nbAtoms] = newAtom;
-        memcpy(newAtom, atom, sizeof(xmlRegAtom));
-    }
-
-    /* Copy states from regexp */
-    for (int i = 0; i < regexp->nbStates; i++) {
-        xmlRegStatePtr state = regexp->states[i];
-        if (state == NULL)
-            continue;
-
-        /* Copy the state structure */
-        xmlRegStatePtr newState = xmlMalloc(sizeof(xmlRegState));
-        if (newState == NULL) {
-            /* rollback all changes if allocation is unsuccessful */
-            goto failure;
-        }
-
-        /* Set pointer to copied structure and actually copy */
-        newStatesList[nbStates + i] = newState;
-        memcpy(newState, state, sizeof(xmlRegState));
-
-        newState->transTo = xmlMalloc(state->nbTransTo * sizeof(int));
-        if (newState->transTo == NULL) {
-            /* rollback all changes if allocation is unsuccessful */
-            goto failure;
-        }
-
-        /* Renumber regexp's states, so that they don't overlap with closure's other states */
-        newState->no += nbStates;
-        for (int j = 0; j < newState->nbTransTo; j++) {
-            newState->transTo[j] += nbStates;
-        }
-
-        xmlRegTrans* newTrans = xmlMalloc(state->nbTrans * sizeof(xmlRegTrans));
-        if (newTrans == NULL) {
-            /* rollback all changes if allocation is unsuccessful */
-            goto failure;
-        }
-        memcpy(newTrans, state->trans, state->nbTrans * sizeof(xmlRegTrans));
-        /* TODO renumber nodes in transitions */
-    }
-
-    closure->atoms = newAtomList;
-    closure->states = newStatesList;
-    closure->counters = newCountersList;
-    closure->nbAtoms += regexp->nbAtoms;
-    closure->nbCounters += regexp->nbCounters;
-    closure->nbStates += regexp->nbStates;
-
-    /* Create new links between states */
-
-
-    return 0;
-
-failure:
-    closure->error = 1;
-    if (newAtomList != NULL) {
-        /* Deallocate newly allocated atoms copies */
-        for (int i = 0; i < regexp->nbAtoms; i++) {
-            if (newAtomList[i + nbAtoms] != NULL)
-                xmlFree(newAtomList[i + nbAtoms]);
-        }
-        /* TODO what happens when I reallocate a smaller size chunk?
-           Will it allocate another chunk or reuse the same chunk, but cut its size? */
-        closure->atoms = xmlRealloc(newAtomList, nbAtoms * sizeof(xmlRegAtomPtr));
-        if (closure->atoms == NULL) {
-            printf("EMERGENCY! closure->atoms is NULL\n");
-        }
-    }
-
-    if (newStatesList != NULL) {
-        /* Deallocate newly allocated states copies */
-        for (int i = 0; i < regexp->nbStates; i++) {
-            xmlRegStatePtr state = newStatesList[i + nbStates];
-            if (state != NULL) {
-                if (state->trans != NULL)
-                    xmlFree(state->trans);
-                if (state->transTo != NULL)
-                    xmlFree(state->transTo);
-                xmlFree(state);
-            }
-        }
-        /* TODO what happens when I reallocate a smaller size chunk?
-           Will it allocate another chunk or reuse the same chunk, but cut its size? */
-        closure->states = xmlRealloc(newStatesList, nbStates * sizeof(xmlRegStatePtr));
-        if (closure->states == NULL) {
-            printf("EMERGENCY! closure->states is NULL\n");
-        }
-    }
-
-    if (newCountersList != NULL)
-        closure->counters = xmlRealloc(newCountersList, nbCounters * sizeof(xmlRegCounter));
-
-    return(-1);
-}
-
-int       
-xmlAutomataTransitiveClosureGetError(xmlAutomataTransitiveClosurePtr closure)
-{
-    if ((closure == NULL))
-        return 1;
-    return closure->error;
 }
 
 

@@ -1097,6 +1097,7 @@ struct _xmlSchemaVerifyXPathCtxt {
     int type;               /* Reserved for future use */
     xmlSchemaValidCtxtPtr schemaCtxt;
     const char* xpath;
+    xmlRegexpPtr verticalModel;             /* The state machine that represents the vertical slices inside XML documents */
 
     xmlAutomataPtr am;                      /* The finite automata associated with the vertical document model */
     xmlAutomataStatePtr start;
@@ -29359,66 +29360,6 @@ xmlSchemaGetVerifyXPathErrors(xmlSchemaVerifyXPathCtxtPtr ctxt,
 }
 
 static void
-xmlSchemaAddTypeToTransitiveClosure(void* payload, void* output,
-    const xmlChar* name ATTRIBUTE_UNUSED)
-{
-    xmlSchemaTypePtr type = (xmlSchemaTypePtr)payload;
-    xmlAutomataTransitiveClosurePtr closure = 
-        (xmlAutomataTransitiveClosurePtr)output;
-
-    if (type == NULL) {
-        fprintf(output, "Type: NULL\n");
-        return;
-    }
-
-    switch (type->type) {
-    case XML_SCHEMA_TYPE_BASIC: printf("[basic] "); break;
-    case XML_SCHEMA_TYPE_SIMPLE: printf("[simple] "); break;
-    case XML_SCHEMA_TYPE_COMPLEX: printf("[complex] "); break;
-    case XML_SCHEMA_TYPE_SEQUENCE: printf("[sequence] "); break;
-    case XML_SCHEMA_TYPE_CHOICE: printf("[choice] "); break;
-    case XML_SCHEMA_TYPE_ALL: printf("[all] "); break;
-    case XML_SCHEMA_TYPE_UR: printf("[ur] "); break;
-    case XML_SCHEMA_TYPE_RESTRICTION: printf("[restriction] "); break;
-    case XML_SCHEMA_TYPE_EXTENSION: printf("[extension] "); break;
-    default: printf("[unknown type %d] ", type->type); break;
-    }
-    
-    printf("We have type.\n");
-
-    switch (type->contentType) {
-    case XML_SCHEMA_CONTENT_UNKNOWN: printf("[unknown] "); break;
-    case XML_SCHEMA_CONTENT_EMPTY: printf("[empty] "); break;
-    case XML_SCHEMA_CONTENT_ELEMENTS: printf("[element] "); break;
-    case XML_SCHEMA_CONTENT_MIXED: printf("[mixed] "); break;
-    case XML_SCHEMA_CONTENT_MIXED_OR_ELEMENTS:
-        /* not used. */
-        break;
-    case XML_SCHEMA_CONTENT_BASIC: printf("[basic] "); break;
-    case XML_SCHEMA_CONTENT_SIMPLE: printf("[simple] "); break;
-    case XML_SCHEMA_CONTENT_ANY: printf("[any] "); break;
-    }
-    printf("\n");
-    if (type->base != NULL) {
-        printf("  base type: '%s'", type->base);
-        if (type->baseNs != NULL)
-            printf(" ns '%s'\n", type->baseNs);
-        else
-            printf("\n");
-    }
-    /*if (type->attrUses != NULL) xmlSchemaAttrUsesDump(type->attrUses, output);
-    if (type->annot != NULL) xmlSchemaAnnotDump(output, type->annot);*/
-#ifdef DUMP_CONTENT_MODEL
-    if ((type->type == XML_SCHEMA_TYPE_COMPLEX) &&
-        (type->subtypes != NULL)) {
-        if (xmlRegexpAddToTransitiveClosure(type->contModel, closure) < 0) {
-            return;
-        }
-    }
-#endif
-}
-
-static void
 xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
     const xmlChar* name ATTRIBUTE_UNUSED,
     const xmlChar* namespace ATTRIBUTE_UNUSED,
@@ -29464,9 +29405,7 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
             fprintf(stderr, "oops, cannot map potential document root to automata state\n");
             return;
         }
-
-
-        printf("ok transition is added\n");
+        /*printf("ok transition is added\n");*/
     }
     else {
         printf("ok, we have element that cannot be root in the XML document\n");
@@ -29553,7 +29492,7 @@ xmlSchemaBuildSchemaModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr pctxt,
                 elemState = xmlHashLookup(pctxt->otherElemDecl, elemDecl->name);
 
             xmlAutomataStatePtr newState = xmlAutomataNewTransition(
-                pctxt->am, oldstate, elemState, elemDecl->name, elemDecl);
+                pctxt->am, oldstate, elemState, elemDecl->name, WXS_TYPE_CAST particle);
 
             if (newState == NULL) {
                 pctxt->nbErrors++;
@@ -29567,6 +29506,7 @@ xmlSchemaBuildSchemaModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr pctxt,
                     fprintf(stderr, "Error while adding new state in otherElemDecl hash table\n");
                     return (-1);
                 }
+                xmlAutomataSetFinalState(pctxt->am, elemState);
             } 
         }
         
@@ -29621,7 +29561,7 @@ xmlSchemaAddPathsToChildrenInClosure(void* payload, void* output,
             fprintf(stderr, "oops, cannot add transitions to other nodes\n");
             return;
         }
-        printf("ok we have found the root node in the hash table\n");
+        /*printf("ok we have found the root node in the hash table\n");*/
     }
     else {
         printf("ok, we have element that cannot be root in the XML document\n");
@@ -29634,7 +29574,7 @@ xmlSchemaAddPathsToChildrenInClosure(void* payload, void* output,
 /**
  * xmlSchemaVerifyXPath:
  * @ctxt: a schema validation context
- * @str: the XPath query (must be absolute)
+ * @str: the XPath query (must be relative from the document root)
  * 
  * Verify if the given XPath query is satisfiable on the given schema.
  *   An XPath query is satisfiable if there is any XML document that
@@ -29655,50 +29595,39 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     ctxt->am = xmlNewAutomata();
     if (ctxt->am == NULL) {
         xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
-        return -1;
+        return (-1);
     }
 
     ctxt->start = xmlAutomataGetInitState(ctxt->am);
-    ctxt->end = xmlAutomataNewState(ctxt->am);
-    if (ctxt->end == NULL) {
-        xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
-        xmlFreeAutomata(ctxt->am);
-        return (-1);
-    }
-
-    xmlAutomataTransitiveClosurePtr closure = xmlAutomataNewTransitiveClosure();
-    if (closure == NULL) {
-        if (ctxt->error) {
-            /* TODO warn about the failing allocation for the closure */
-            xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
-            
-        }
-        xmlFreeAutomata(ctxt->am);
-        /* closure could not be successfully allocated */
-        return (-1);
-    }
 
     xmlHashScanFull(schema->elemDecl, xmlSchemaAddNodeToTransitiveClosure, ctxt);
     if (ctxt->nbErrors) {
-        xmlAutomataFreeTransitiveClosure(closure);
         xmlFreeAutomata(ctxt->am);
-        return (-2);
+        return (-1);
     }
 
     xmlHashScanFull(schema->elemDecl, xmlSchemaAddPathsToChildrenInClosure, ctxt);
     if (ctxt->nbErrors) {
-        xmlAutomataFreeTransitiveClosure(closure);
-        xmlFreeAutomata(ctxt->am);
-        return (-2);
+        return (-1);
     }
 
-    xmlHashScan(schema->typeDecl, xmlSchemaAddTypeToTransitiveClosure, closure);
+    ctxt->verticalModel = xmlAutomataCompile(ctxt->am);
+    if (ctxt->verticalModel == NULL) {
+        xmlFreeAutomata(ctxt->am);
+        return (-1);
+    }
+
+    xmlRegexpPtr transitiveClosure = xmlRegexpBuildTransitiveClosure(ctxt->verticalModel);
+    if (transitiveClosure == NULL) {
+        xmlRegFreeRegexp(ctxt->verticalModel);
+        return (-1);
+    }
 
     /* TODO verification for relative XPath queries*/
-    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->am);
+    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, transitiveClosure);
 
-    xmlAutomataFreeTransitiveClosure(closure);
-    xmlFreeAutomata(ctxt->am);
+    xmlRegFreeRegexp(transitiveClosure);
+    xmlRegFreeRegexp(ctxt->verticalModel);
     return ret;
 }
 

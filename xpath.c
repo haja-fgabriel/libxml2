@@ -14048,7 +14048,7 @@ xmlXPathEvaluatePredicateResult(xmlXPathParserContextPtr ctxt,
 int
 xmlXPathIsSatisfiableOnSchema(xmlXPathContextPtr ctx,
     const xmlChar* str,
-    const xmlAutomataPtr closure)
+    const xmlRegexpPtr closure)
 {
     int ret = 0;
     if ((closure == NULL) || (str == NULL)) {
