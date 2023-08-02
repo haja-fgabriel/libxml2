@@ -1098,14 +1098,19 @@ struct _xmlSchemaVerifyXPathCtxt {
     xmlSchemaValidCtxtPtr schemaCtxt;
     const char* xpath;
 
-    xmlAutomataPtr graph;
+    xmlAutomataPtr am;                      /* The finite automata associated with the vertical document model */
     xmlAutomataStatePtr start;
     xmlAutomataStatePtr end;
+    xmlAutomataStatePtr state;              /* Current state used when building vertical model */
 
     void* errCtxt;
-    xmlSchemaValidityErrorFunc error;
-    xmlSchemaValidityWarningFunc warning;
+    xmlSchemaValidityErrorFunc error;       /* Error callback */
+    xmlSchemaValidityWarningFunc warning;   /* Warning callback */
 
+    xmlHashTablePtr rootElemDecl;           /* A mapping between elements that can be document roots and their states in the automata */
+    xmlHashTablePtr otherElemDecl;          /* A mapping between elements that can be document roots and their states in the automata */
+
+    int nbErrors;
 };
 
 #endif /* LIBXML_XPATH_ENABLED */
@@ -29282,10 +29287,28 @@ xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str
 
     xmlChar* xpathCopy = xmlStrdup(str);
     if (xpathCopy == NULL) {
-        free(ctxt);
+        xmlFree(ctxt);
         return NULL;
     }
-    
+
+    xmlHashTablePtr rootElemDecl = xmlHashCreate(xmlHashSize(schemaCtxt->schema->elemDecl));
+    if (rootElemDecl == NULL) {
+        xmlFree(xpathCopy);
+        xmlFree(ctxt);
+        return NULL;
+    }
+
+    xmlHashTablePtr otherElemDecl = xmlHashCreate(xmlHashSize(schemaCtxt->schema->elemDecl));
+    if (otherElemDecl == NULL) {
+        xmlFree(rootElemDecl);
+        xmlFree(xpathCopy);
+        xmlFree(ctxt);
+        return NULL;
+    }
+
+
+    ctxt->rootElemDecl = rootElemDecl;
+    ctxt->otherElemDecl = otherElemDecl;
     ctxt->schemaCtxt = schemaCtxt;
     ctxt->xpath = xpathCopy;
     return ctxt;
@@ -29294,7 +29317,14 @@ xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str
 void
 xmlSchemaFreeVerifyXPathCtxt(xmlSchemaVerifyXPathCtxtPtr ctxt)
 {
-    xmlFree(ctxt->xpath);
+    if (ctxt == NULL)
+        return;
+    if (ctxt->rootElemDecl)
+        xmlHashFree(ctxt->rootElemDecl, NULL);
+    if (ctxt->otherElemDecl)
+        xmlHashFree(ctxt->otherElemDecl, NULL);
+    if (ctxt->xpath)
+        xmlFree(ctxt->xpath);
     xmlFree(ctxt);
 }
 
@@ -29396,11 +29426,18 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
 {
     xmlSchemaTypePtr type = (xmlSchemaTypePtr)payload;
     xmlSchemaVerifyXPathCtxtPtr ctxt = (xmlSchemaVerifyXPathCtxtPtr)output;
-    if (xmlStrEqual(type->node->parent->name, "schema")) {
+    if (ctxt->nbErrors) {
+        return;
+    }
+
+    if (type->node && type->node->parent && type->node->parent->name &&
+        xmlStrEqual(type->node->parent->name, "schema")) {
         xmlAutomataStatePtr state = xmlAutomataNewTransition(
-            ctxt->graph, ctxt->start, ctxt->end, type->name, type);
+            ctxt->am, ctxt->start, NULL, type->name, type);
+
 
         if (state == NULL) {
+            ctxt->nbErrors++;
             fprintf(stderr, "oops, cannot add transition in schema graph\n");
             /* WTF should I do here? */
             /*__xmlRaiseError(NULL, ctxt->error, data, ctxt,
@@ -29414,8 +29451,177 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
             return;
         }
 
+        if (xmlAutomataSetFinalState(ctxt->am, state) < 0) {
+            ctxt->nbErrors++;
+            /* TODO switch to proper error handling */
+            fprintf(stderr, "oops, cannot mark new automata state as final\n");
+            return;
+        }
+
+        if (xmlHashAddEntry(ctxt->rootElemDecl, type->name, state) < 0) {
+            ctxt->nbErrors++;
+            /* TODO switch to proper error handling */
+            fprintf(stderr, "oops, cannot map potential document root to automata state\n");
+            return;
+        }
+
 
         printf("ok transition is added\n");
+    }
+    else {
+        printf("ok, we have element that cannot be root in the XML document\n");
+    }
+
+    /* TODO TBD */
+    return;
+}
+
+
+/**
+ * xmlSchemaBuildSchemaModelForVerifyXPath:
+ * @ctxt:  the schema XPath verification context
+ * @particle:  the particle component
+ *
+ * Create the automaton for vertical structure of a content type.
+ *
+ * Returns 1 if the content is nillable, 0 otherwise
+ */
+static int
+xmlSchemaBuildSchemaModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr pctxt,
+    xmlSchemaParticlePtr particle)
+{
+    int ret = 0, tmp2;
+
+    if (particle == NULL) {
+        PERROR_INT("xmlSchemaBuildSchemaModelForVerifyXPath", "particle is NULL");
+        return(1);
+    }
+    if (particle->children == NULL) {
+        /*
+        * Just return in this case. A missing "term" of the particle
+        * might arise due to an invalid "term" component.
+        */
+        return(1);
+    }
+
+    switch (particle->children->type) {
+    case XML_SCHEMA_TYPE_ANY:
+    case XML_SCHEMA_TYPE_SEQUENCE:
+    case XML_SCHEMA_TYPE_CHOICE:
+    case XML_SCHEMA_TYPE_ALL: {
+        xmlSchemaTreeItemPtr sub;
+        xmlAutomataStatePtr oldstate = pctxt->state;
+
+        ret = 0;
+        oldstate = pctxt->state;
+
+        sub = particle->children->children;
+        while (sub != NULL) {
+            pctxt->state = oldstate;
+            tmp2 = xmlSchemaBuildSchemaModelForVerifyXPath(pctxt,
+                (xmlSchemaParticlePtr)sub);
+            if (tmp2 == 1) ret = 1;
+            else if (tmp2 < 0) {
+                fprintf(stderr, "try to handle error when creating vertical model here\n");
+                return (-1);
+            }
+            sub = sub->next;
+        }
+        pctxt->state = oldstate;
+        break;
+    }
+    case XML_SCHEMA_TYPE_ELEMENT: {
+        if (((xmlSchemaElementPtr)particle->children)->flags &
+            XML_SCHEMAS_ELEM_SUBST_GROUP_HEAD) {
+            /*
+            * Substitution groups.
+            */
+            /*ret = xmlSchemaBuildContentModelForSubstGroup(pctxt, particle, -1, NULL);*/
+            /* TODO vertical model for substitution groups */
+        }
+        else {
+            xmlSchemaElementPtr elemDecl;
+            xmlAutomataStatePtr oldstate = pctxt->state;
+
+            elemDecl = (xmlSchemaElementPtr)particle->children;
+
+            if (elemDecl->flags & XML_SCHEMAS_ELEM_ABSTRACT)
+                return(0);
+
+            xmlAutomataStatePtr elemState = xmlHashLookup(pctxt->rootElemDecl, elemDecl->name);
+            if (elemState == NULL)
+                elemState = xmlHashLookup(pctxt->otherElemDecl, elemDecl->name);
+
+            xmlAutomataStatePtr newState = xmlAutomataNewTransition(
+                pctxt->am, oldstate, elemState, elemDecl->name, elemDecl);
+
+            if (newState == NULL) {
+                pctxt->nbErrors++;
+                /* TODO improve logging for errors */
+                fprintf(stderr, "TODO handle when new transition cannot be created from the vertical model\n");
+                return (-1);
+            }
+            if (elemState == NULL) {
+                if (xmlHashAddEntry(pctxt->otherElemDecl, elemDecl->name, newState) < 0) {
+                    /* TODO improve logging for errors */
+                    fprintf(stderr, "Error while adding new state in otherElemDecl hash table\n");
+                    return (-1);
+                }
+            } 
+        }
+        
+        break;
+    }
+    case XML_SCHEMA_TYPE_GROUP:
+        /*
+        * If we hit a model group definition, then this means that
+        * it was empty, thus was not substituted for the containing
+        * model group. Just do nothing in this case.
+        * TODO: But the group should be substituted and not occur at
+        * all in the content model at this point. Fix this.
+        */
+        ret = 1;
+        break;
+    default:
+        xmlSchemaInternalErr2(ACTXT_CAST pctxt,
+            "xmlSchemaBuildAContentModel",
+            "found unexpected term of type '%s' in content model",
+            WXS_ITEM_TYPE_NAME(particle->children), NULL);
+        return(ret);
+    }
+    return(ret);
+}
+
+
+static void
+xmlSchemaAddPathsToChildrenInClosure(void* payload, void* output,
+    const xmlChar* name ATTRIBUTE_UNUSED,
+    const xmlChar* namespace ATTRIBUTE_UNUSED,
+    const xmlChar* context ATTRIBUTE_UNUSED)
+{
+    xmlSchemaTypePtr type = (xmlSchemaTypePtr)payload;
+    xmlSchemaVerifyXPathCtxtPtr ctxt = (xmlSchemaVerifyXPathCtxtPtr)output;
+    if (ctxt->nbErrors > 0) {
+        return;
+    }
+    if (type->node && type->node->parent && type->node->parent->name &&
+        xmlStrEqual(type->node->parent->name, "schema")) {
+        xmlAutomataStatePtr state = xmlHashLookup(ctxt->rootElemDecl, type->name); 
+        if (state == NULL) {
+            ctxt->nbErrors++;
+            /* TODO switch to proper error handling */
+            fprintf(stderr, "oops, cannot map potential document root to automata state\n");
+            return;
+        }
+        ctxt->state = state;
+
+        if (xmlSchemaBuildSchemaModelForVerifyXPath(ctxt, WXS_TYPE_PARTICLE(type->subtypes)) < 0) {
+            ctxt->nbErrors++;
+            /* TODO switch to proper error handling */
+            fprintf(stderr, "oops, cannot add transitions to other nodes\n");
+            return;
+        }
+        printf("ok we have found the root node in the hash table\n");
     }
     else {
         printf("ok, we have element that cannot be root in the XML document\n");
@@ -29446,17 +29652,17 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     }
     xmlSchemaPtr schema = ctxt->schemaCtxt->schema;
 
-    ctxt->graph = xmlNewAutomata();
-    if (ctxt->graph == NULL) {
+    ctxt->am = xmlNewAutomata();
+    if (ctxt->am == NULL) {
         xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
         return -1;
     }
 
-    ctxt->start = xmlAutomataGetInitState(ctxt->graph);
-    ctxt->end = xmlAutomataNewState(ctxt->graph);
+    ctxt->start = xmlAutomataGetInitState(ctxt->am);
+    ctxt->end = xmlAutomataNewState(ctxt->am);
     if (ctxt->end == NULL) {
         xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
-        xmlFreeAutomata(ctxt->graph);
+        xmlFreeAutomata(ctxt->am);
         return (-1);
     }
 
@@ -29467,25 +29673,32 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
             xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
             
         }
-        xmlFreeAutomata(ctxt->graph);
+        xmlFreeAutomata(ctxt->am);
         /* closure could not be successfully allocated */
         return (-1);
     }
 
     xmlHashScanFull(schema->elemDecl, xmlSchemaAddNodeToTransitiveClosure, ctxt);
-    if (xmlAutomataTransitiveClosureGetError(closure)) {
+    if (ctxt->nbErrors) {
         xmlAutomataFreeTransitiveClosure(closure);
-        xmlFreeAutomata(ctxt->graph);
+        xmlFreeAutomata(ctxt->am);
+        return (-2);
+    }
+
+    xmlHashScanFull(schema->elemDecl, xmlSchemaAddPathsToChildrenInClosure, ctxt);
+    if (ctxt->nbErrors) {
+        xmlAutomataFreeTransitiveClosure(closure);
+        xmlFreeAutomata(ctxt->am);
         return (-2);
     }
 
     xmlHashScan(schema->typeDecl, xmlSchemaAddTypeToTransitiveClosure, closure);
 
     /* TODO verification for relative XPath queries*/
-    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->graph);
+    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->am);
 
     xmlAutomataFreeTransitiveClosure(closure);
-    xmlFreeAutomata(ctxt->graph);
+    xmlFreeAutomata(ctxt->am);
     return ret;
 }
 
