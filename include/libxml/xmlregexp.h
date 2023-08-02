@@ -62,12 +62,6 @@ XMLPUBFUN int
 		    xmlRegexpIsDeterminist(xmlRegexpPtr comp);
 
 
-/*
- * Additional functions
- */
-XMLPUBFUN xmlRegexpPtr
-                    xmlRegexpBuildTransitiveClosure(xmlRegexpPtr comp);
-
 /**
  * xmlRegExecCallbacks:
  * @exec: the regular expression context

@@ -564,13 +564,6 @@ XMLPUBFUN int
 XMLPUBFUN void
 		    xmlXPathFreeCompExpr	(xmlXPathCompExprPtr comp);
 
-#if defined(LIBXML_XPATH_ENABLED) && defined(LIBXML_SCHEMAS_ENABLED)
-XMLPUBFUN int
-                    xmlXPathIsSatisfiableOnSchema(xmlXPathContextPtr ctx, 
-                                                  const xmlChar* str, 
-                                                  const xmlRegexpPtr closure);
-#endif /* LIBXML_XPATH_ENABLED and LIBXML_SCHEMAS_ENABLED */
-
 #endif /* LIBXML_XPATH_ENABLED */
 #if defined(LIBXML_XPATH_ENABLED) || defined(LIBXML_SCHEMAS_ENABLED)
 XML_DEPRECATED
