@@ -81,6 +81,7 @@
 
 #include "private/error.h"
 #include "private/string.h"
+#include "private/xpath.h"
 
 /* #define DEBUG 1 */
 
@@ -29624,7 +29625,7 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     }
 
     /* TODO verification for relative XPath queries*/
-    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, transitiveClosure);
+    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->verticalModel, transitiveClosure);
 
     xmlRegFreeRegexp(transitiveClosure);
     xmlRegFreeRegexp(ctxt->verticalModel);

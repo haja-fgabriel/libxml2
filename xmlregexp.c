@@ -3655,6 +3655,42 @@ xmlRegNewExecCtxt(xmlRegexpPtr comp, xmlRegExecCallbacks callback, void *data) {
 }
 
 /**
+ * xmlRegCopyExecCtxt:
+ * @exec: a regular expression evaluation context
+ *
+ * Returns a copy of the evaluation context if it is in compact state, 
+ * else returns NULL.
+ * 
+ * TODO implement for non-compact representation
+ */
+xmlRegExecCtxtPtr
+xmlRegCopyExecCtxt(xmlRegExecCtxtPtr exec) {
+    if (exec == NULL || exec->comp == NULL || exec->comp->compact == NULL) {
+        return NULL;
+    }
+
+    xmlRegExecCtxtPtr newExec = (xmlRegExecCtxtPtr)xmlMalloc(sizeof(xmlRegExecCtxt));
+    if (newExec == NULL) {
+        return NULL;
+    }
+    memset(newExec, 0, sizeof(xmlRegExecCtxt));
+    newExec->inputString = NULL;
+    newExec->index = 0;
+    newExec->determinist = 1;
+    newExec->maxRollbacks = 0;
+    newExec->nbRollbacks = 0;
+    newExec->rollbacks = NULL;
+    newExec->status = 0;
+    newExec->comp = exec->comp;
+    newExec->transno = 0;
+    newExec->transcount = 0;
+    newExec->callback = exec->callback;
+    newExec->data = exec->data;
+
+    return newExec;
+}
+
+/**
  * xmlRegFreeExecCtxt:
  * @exec: a regular expression evaluation context
  *
@@ -4507,6 +4543,63 @@ xmlRegExecErrInfo(xmlRegExecCtxtPtr exec, const xmlChar **string,
 	    *string = NULL;
     }
     return(xmlRegExecGetValues(exec, 1, nbval, nbneg, values, terminal));
+}
+
+int
+xmlRegExecGetState(xmlRegExecCtxtPtr ctxt)
+{
+    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact) {
+        return (-1);
+    }
+    return ctxt->index;
+}
+
+void
+xmlRegExecSetState(xmlRegExecCtxtPtr ctxt, int state)
+{
+    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact) {
+        return;
+    }
+    ctxt->index = state;
+}
+
+int
+xmlRegExecHasPath(xmlRegExecCtxtPtr ctxt, const xmlChar* value)
+{
+    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact == NULL) {
+        return (-1);
+    }
+    xmlRegexpPtr comp;
+    comp = ctxt->comp;
+    int state = ctxt->index;
+    int target = 0;
+    int i;
+
+    ctxt->comp->compact;
+    for (i = 0; i < comp->nbstrings; i++) {
+        target = comp->compact[state * (comp->nbstrings + 1) + i + 1];
+        if ((target > 0) && (target <= comp->nbstates)) {
+            target--; /* to avoid 0 */
+            if (xmlRegStrEqualWildcard(comp->stringMap[i], value)) {
+                return (1);
+            }
+        }
+    }
+
+    return 0;
+}
+
+int
+xmlRegExecIsInFinalState(xmlRegExecCtxtPtr ctxt)
+{
+    /* TODO implement for non-compact representation of finite automata */
+    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact == NULL) {
+        return (-1);
+    }
+
+    xmlRegexpPtr comp = ctxt->comp;
+    int state = ctxt->index;
+    return (comp->compact[state * (comp->nbstrings + 1)] == XML_REGEXP_FINAL_STATE);
 }
 
 #ifdef DEBUG_ERR
@@ -5787,6 +5880,58 @@ xmlRegFreeRegexp(xmlRegexpPtr regexp) {
 }
 
 /**
+ * xmlRegexpGetNbStrings
+ * @comp: a compact regular expression
+ * 
+ * If the regexp is represented in a compact form, return the number of
+ * atoms.
+ */
+int
+xmlRegexpGetNbStrings(xmlRegexpPtr reg)
+{
+    if (reg == NULL)
+        return (-1);
+    if (reg->compact != NULL) 
+        return reg->nbstrings;
+    return reg->nbAtoms;
+}
+
+char*
+xmlRegexpGetString(xmlRegexpPtr reg, int index)
+{
+    if (reg == NULL || index < 0)
+        return NULL;
+    return reg->stringMap[index];
+}
+
+int
+xmlRegexpGetNbStates(xmlRegexpPtr reg)
+{
+    if (reg == NULL)
+        return (-1);
+    if (reg->compact != NULL)
+        return reg->nbstates;
+    return reg->nbStates;
+}
+
+/**
+ * xmlRegexpHasPath
+ * @reg: the finite state machine
+ * @index: the index of the initial state
+ * @atom: the index of the atom
+ * 
+ * Return the destination state if there is a path from the @index state using
+ * the @atom atom.
+ */
+int
+xmlRegexpHasPath(xmlRegexpPtr reg, int index, int atom)
+{
+    if (reg == NULL || index < 0 || atom < 0 || reg->compact == NULL)
+        return (-1);
+    return reg->compact[index * (reg->nbstates + 1) + atom + 1];
+}
+
+/**
  * xmlRegexpBuildTransitiveClosure
  * @comp: a compact regular expression
  * 
@@ -5801,9 +5946,12 @@ xmlRegexpBuildTransitiveClosure(xmlRegexpPtr comp)
         return NULL;
     }
 
+    xmlRegexpPtr ret = NULL;
     xmlChar** stringMap = NULL;
     void** transdata = NULL;
-    xmlRegexpPtr ret = NULL;
+    int* transitions = NULL;
+    errno_t retVal;
+
     ret = (xmlRegexpPtr)xmlMalloc(sizeof(xmlRegexp));
     if (ret == NULL) {
         return(NULL);
@@ -5835,25 +5983,50 @@ xmlRegexpBuildTransitiveClosure(xmlRegexpPtr comp)
     if (transdata == NULL) {
         goto exit_failure;
     }
-    errno_t retVal = memcpy_s(transdata, sizeof(void*) * ret->nbstates, 
+    retVal = memcpy_s(transdata, sizeof(void*) * ret->nbstates, 
         comp->transdata, sizeof(void*) * comp->nbstates);
     if (retVal != 0) {
         goto exit_failure;
     }
     ret->transdata = transdata;
 
+    size_t transitionsSize = sizeof(int) * (ret->nbstates + 1) * (ret->nbstrings + 1);
+    transitions = xmlRegCalloc2(ret->nbstates + 1, ret->nbstrings + 1, sizeof(int));
+    if (transitions == NULL) {
+        goto exit_failure;
+    }
+    retVal = memcpy_s(transitions, transitionsSize, comp->compact, transitionsSize);
+    if (retVal != 0) {
+        goto exit_failure;
+    }
+
+    ret->compact = transitions;
 
     /* The actual building of the transitive closure using the Floyd-Warshall algorithm */
-    for (int k = 0; k < ret->nbStates; k++) {
-        for (int i = 0; i < ret->nbStates; i++) {
-            for (int j = 0; j < ret->nbStates; j++) {
-                ;
+    for (int i = 1; i <= ret->nbstates; i++) {
+        for (int atom1 = 1; atom1 <= ret->nbstrings; atom1++) {
+            for (int atom2 = 1; atom2 <= ret->nbstrings; atom2++) {
+                int i_to_k = (i-1) * (ret->nbstrings + 1) + atom1;
+                int k = ret->compact[i_to_k];
+                if (k <= 0)
+                    continue;
+
+                int k_to_j = (k-1) * (ret->nbstrings + 1) + atom2;
+                int j = ret->compact[k_to_j];
+                if (j <= 0)
+                    continue;
+
+                int i_to_j = (i-1) * (ret->nbstrings + 1) + atom2;
+                if (ret->compact[i_to_j] == 0)
+                    ret->compact[i_to_j] = j;
             }
         }
     }
     return ret;
 
 exit_failure:
+    if (transitions)
+        xmlFree(transitions);
     if (transdata)
         xmlFree(transdata);
     if (stringMap) {

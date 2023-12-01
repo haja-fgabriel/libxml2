@@ -52,10 +52,13 @@
 #include "private/buf.h"
 #include "private/error.h"
 #include "private/xpath.h"
+#include "private/regexp.h"
 
 #ifdef LIBXML_PATTERN_ENABLED
-#define XPATH_STREAMING
+// #define XPATH_STREAMING
 #endif
+
+#define DEBUG_XPATH_EXPRESSION
 
 #define TODO								\
     xmlGenericError(xmlGenericErrorContext,				\
@@ -13938,6 +13941,281 @@ xmlXPathRunEval(xmlXPathParserContextPtr ctxt, int toBool)
     return(0);
 }
 
+#if defined(LIBXML_XPATH_ENABLED)
+
+struct xmlXPathQueueNodeData {
+    xmlRegExecCtxtPtr execCtx;
+    int xpathIndex;
+};
+
+/* Placeholder type */
+typedef struct xmlXPathQueueNodeData _xmlQueueNodeDataType;
+
+struct _xmlXPathQueueNode {
+    _xmlQueueNodeDataType data;
+    struct _xmlXPathQueueNode* next;
+};
+typedef struct _xmlXPathQueueNode xmlXPathQueueNode;
+typedef xmlXPathQueueNode* xmlXPathQueueNodePtr;
+
+static xmlXPathQueueNodePtr
+xmlXPathNewQueueNode(_xmlQueueNodeDataType data)
+{
+    xmlXPathQueueNodePtr node =
+        xmlMalloc(sizeof(xmlXPathQueueNode));
+    if (node == NULL)
+        return NULL;
+
+    memset(node, 0, sizeof(xmlXPathQueueNode));
+    node->data = data;
+
+    return node;
+}
+
+static void
+xmlXPathFreeQueueNode(xmlXPathQueueNodePtr node)
+{
+    if (node == NULL)
+        return;
+    xmlFree(node);
+}
+
+
+struct _xmlXPathQueue {
+    int size;
+    xmlXPathQueueNodePtr start;
+    xmlXPathQueueNodePtr end;
+};
+typedef struct _xmlXPathQueue xmlXPathQueue;
+typedef xmlXPathQueue* xmlXPathQueuePtr;
+
+static void
+xmlXPathInitQueue(
+    const xmlXPathQueuePtr queue
+)
+{
+    if (queue == NULL) {
+        return;
+    }
+    queue->size = 0;
+    queue->start = NULL;
+    queue->end = NULL;
+}
+
+static int
+xmlXPathQueuePush(xmlXPathQueuePtr queue, _xmlQueueNodeDataType data)
+{
+    xmlXPathQueueNodePtr newNode = xmlXPathNewQueueNode(data);
+    if (newNode == NULL) {
+        return (-1);
+    }
+
+    if (queue->start == queue->end && queue->start == NULL) {
+        queue->start = newNode;
+        queue->end = newNode;
+    }
+    else {
+        queue->end->next = newNode;
+        queue->end = newNode;
+    }
+
+    queue->size++;
+    return 0;
+}
+
+static int
+xmlXPathQueuePop(xmlXPathQueuePtr queue, _xmlQueueNodeDataType* data)
+{
+    if (queue == NULL || queue->size == 0) {
+        return (-1);
+    }
+
+    xmlXPathQueueNodePtr node = queue->start;
+    if (data) {
+        *data = node->data;
+    }
+
+    queue->start = node->next;
+    queue->size--;
+
+    xmlXPathFreeQueueNode(node);
+    if (queue->start == NULL) {
+        queue->end = NULL;
+    }
+    return 0;
+}
+
+#if defined(LIBXML_SCHEMAS_ENABLED)
+
+struct _todo_xmlXPathSatisfiabilityExecCtxt {
+    xmlChar* str;
+    xmlRegexpPtr verticalModel;
+    xmlRegexpPtr closure;
+    xmlXPathCompExprPtr comp;
+
+    /* Members used inside the context, but not passed by the user */
+    xmlXPathQueue queue;
+    xmlRegExecCtxtPtr modelExecCtxt;
+    xmlRegExecCtxtPtr closureExecCtxt;
+    int depth;
+};
+typedef struct _todo_xmlXPathSatisfiabilityExecCtxt todo_xmlXPathSatisfiabilityExecCtxt;
+typedef todo_xmlXPathSatisfiabilityExecCtxt* todo_xmlXPathSatisfiabilityExecCtxtPtr;
+
+static todo_xmlXPathSatisfiabilityExecCtxtPtr
+xmlXPathNewSatisfiabilityExecCtxt(
+    const xmlChar* str,
+    const xmlRegexpPtr verticalModel,
+    const xmlRegexpPtr closure,
+    xmlXPathCompExprPtr comp
+)
+{
+    todo_xmlXPathSatisfiabilityExecCtxtPtr newCtx = NULL;
+    newCtx = xmlMalloc(sizeof(todo_xmlXPathSatisfiabilityExecCtxt));
+    if (newCtx == NULL) {
+
+        return NULL;
+    }
+    newCtx->str = str;
+    newCtx->verticalModel = verticalModel;
+    newCtx->closure = closure;
+    newCtx->comp = comp;
+    newCtx->depth = 0;
+
+    xmlXPathInitQueue(&newCtx->queue);
+    
+    void* todoCallback = NULL;
+    void* todoData = NULL;
+    newCtx->modelExecCtxt = NULL;
+
+    return newCtx;
+}
+
+static void
+xmlXPathFreeSatisfiabilityExecCtxt(
+    todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt
+)
+{
+    if (ctxt == NULL) {
+        return;
+    }
+
+    while (ctxt->queue.size > 0) {
+        xmlXPathQueuePop(&ctxt->queue, NULL);
+    }
+}
+
+static void
+todoCallback()
+{
+}
+
+static int
+xmlXPathEvalSatisifabilityOnSchema(
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    const xmlXPathStepOpPtr op
+)
+{
+    if (op == NULL) {
+        return -1;
+    }
+
+    int ret;
+    int ret2;
+    int ret3;
+    void* todoData = NULL;
+
+    switch (op->op) {
+    case XPATH_OP_ROOT:
+        /* TODO start the magic here */
+        ctxt->modelExecCtxt = xmlRegNewExecCtxt(ctxt->verticalModel, NULL, NULL);
+        if (ctxt->modelExecCtxt == NULL) {
+            /* TODO improve error handling */
+            printf("ERROR: xmlRegNewExecCtxt allocation failed!\n");
+            return (-1);
+        }
+        return (1);
+    case XPATH_OP_COLLECT:
+        ret = xmlXPathEvalSatisifabilityOnSchema(ctxt, &ctxt->comp->steps[op->ch1]);
+        if (ret <= 0) {
+            return ret;
+        }
+
+        xmlXPathAxisVal axis = (xmlXPathAxisVal)op->value;
+        xmlXPathTestVal test = (xmlXPathTestVal)op->value2;
+        xmlXPathTypeVal type = (xmlXPathTypeVal)op->value3;
+        const xmlChar* prefix = op->value4;
+        const xmlChar* name = op->value5;
+
+        /* TODO add more cases */
+        if (axis == AXIS_DESCENDANT) {
+            ret2 = xmlRegExecHasPath(ctxt->modelExecCtxt, name);
+            if (ret2 < 0) {
+                return ret2;
+            } 
+            else if (ret2 == 0) {
+                /* Hack that I have made to manipulate state machines that don't contain enough transitions  */
+                /* This case illustrates the case when having a descendant and we need to do the transition through the 
+                   transitive closure. */
+                xmlRegExecSetState(ctxt->closureExecCtxt, xmlRegExecGetState(ctxt->modelExecCtxt));
+                ret3 = xmlRegExecPushString(ctxt->closureExecCtxt, name, todoData);
+                if (ret3 < 0) {
+                    return ret3;
+                }
+                xmlRegExecSetState(ctxt->modelExecCtxt, xmlRegExecGetState(ctxt->closureExecCtxt));
+                return 1;
+            }
+            else {
+                int ret2 = xmlRegExecPushString(ctxt->modelExecCtxt, name, todoData);
+                if (ret2 < 0) {
+                    return ret2;
+                }
+                return 1;
+            }
+        }
+        else if (axis == AXIS_CHILD) {
+            int ret2 = xmlRegExecPushString(ctxt->modelExecCtxt, name, todoData);
+            if (ret2 < 0) {
+                return ret2;
+            }
+            return 1;
+        }
+
+        /* TODO imp */
+        printf("Axis %d not implemented yet\n", axis);
+        return (-1);
+        /* TODO magic */
+    case XPATH_OP_END:
+        return (1);
+    case XPATH_OP_SORT:
+        /* sorting is not needed, as the result is boolean */
+        return xmlXPathEvalSatisifabilityOnSchema(ctxt, &ctxt->comp->steps[op->ch1]);
+    default:
+        break;
+    }
+    return 0;
+}
+
+
+static int
+xmlXPathRunEvalSatisifability(todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt)
+{
+    if (ctxt == NULL) {
+        return (-1);
+    }
+
+    int retVal;
+    retVal = xmlXPathEvalSatisifabilityOnSchema(ctxt, &ctxt->comp->steps[ctxt->comp->last]);
+    if (retVal < 0) {
+        return retVal;
+    }
+
+    return xmlRegExecIsInFinalState(ctxt->modelExecCtxt);
+}
+
+#endif /* LIBXML_SCHEMAS_ENABLED */
+#endif /* LIBXML_XPATH_ENABLED */
+
 /************************************************************************
  *									*
  *			Public interfaces				*
@@ -14034,10 +14312,14 @@ xmlXPathEvaluatePredicateResult(xmlXPathParserContextPtr ctxt,
 }
 
 
-#if defined(LIBXML_XPATH_ENABLED) && defined(LIBXML_SCHEMAS_ENABLED)
-
+#ifdef LIBXML_XPATH_ENABLED
+#ifdef LIBXML_SCHEMAS_ENABLED
 /**
- * xmlXPathIsSatisfiableOnSchema
+ * xmlXPathIsSatisfiableOnSchema:
+ * @ctx: an XPath context
+ * @str: the XPath to be evaluated
+ * @verticalModel: a finite automata representing each parent-child relationship
+ * @closure: the transitive closure of the vertical model
  *
  * Verify if the given XPath expression is satisfiable on a schema.
  * An XPath expression is satisfiable on the schema if there is any
@@ -14048,51 +14330,46 @@ xmlXPathEvaluatePredicateResult(xmlXPathParserContextPtr ctxt,
 int
 xmlXPathIsSatisfiableOnSchema(xmlXPathContextPtr ctx,
     const xmlChar* str,
+    const xmlRegexpPtr verticalModel,
     const xmlRegexpPtr closure)
 {
-    int ret = 0;
     if ((closure == NULL) || (str == NULL)) {
         return (-1);
     }
+
+    int ret = 0;
 
     xmlXPathCompExprPtr comp = xmlXPathCtxtCompile(ctx, str);
     if (comp == NULL) {
         return (-1);
     }
 
-    /* TODO code that checks the XPath query on the XML schema */
-    /* TODO build the closure of the XML schema */
-    xmlXPathStepOp* steps = comp->steps;
-    for (int i = 0; i < comp->maxStep; i++) {
-        switch (steps[i].op) {
-            case XPATH_OP_END: {printf("XPath end expression"); break;}
-            case XPATH_OP_AND: {printf("XPath and expression"); break;}
-            case XPATH_OP_OR: {printf("XPath or operator"); break;}
-            case XPATH_OP_EQUAL: {printf(""); break;}
-            case XPATH_OP_CMP: {printf(""); break;}
-            case XPATH_OP_PLUS: {printf(""); break;}
-            case XPATH_OP_MULT: {printf(""); break;}
-            case XPATH_OP_UNION: {printf(""); break;}
-            case XPATH_OP_ROOT: {printf(""); break;}
-            case XPATH_OP_NODE: {printf(""); break;}
-            case XPATH_OP_COLLECT: {printf(""); break;}
-            case XPATH_OP_VALUE: {printf(""); break;}
-            case XPATH_OP_VARIABLE: {printf(""); break;}
-            case XPATH_OP_FUNCTION: {printf(""); break;}
-            case XPATH_OP_ARG: {printf(""); break;}
-            case XPATH_OP_PREDICATE: {printf(""); break;}
-            case XPATH_OP_FILTER: {printf(""); break;}
-            case XPATH_OP_SORT: {printf(""); break;  }
-        }
+    todo_xmlXPathSatisfiabilityExecCtxtPtr todo = NULL;
+    todo = xmlXPathNewSatisfiabilityExecCtxt(str, verticalModel, closure, comp);
+    if (todo == NULL) {
+        goto cleanup;
     }
 
+    xmlXPathDebugDumpCompExpr(stdout, comp, 5);
+
+    ret = xmlXPathRunEvalSatisifability(todo);
+
 cleanup:
+    xmlXPathFreeSatisfiabilityExecCtxt(todo);
     xmlXPathFreeCompExpr(comp);
 
     return(ret);
 }
+#endif /* LIBXML_SCHEMAS_ENABLED */
+#endif /* LIBXML_XPATH_ENABLED */
 
-#endif
+
+/************************************************************************
+ *									*
+ *			Other private interfaces			*
+ *									*
+ ************************************************************************/
+
 
 #ifdef XPATH_STREAMING
 /**

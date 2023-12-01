@@ -7,6 +7,7 @@ xmlInitXPathInternal(void);
 XML_HIDDEN int
 xmlXPathIsSatisfiableOnSchema(xmlXPathContextPtr ctx,
     const xmlChar* str,
+    const xmlRegexpPtr verticalModel,
     const xmlRegexpPtr closure);
 
 #endif /* XML_XPATH_H_PRIVATE__ */
