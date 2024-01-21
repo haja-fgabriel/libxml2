@@ -14087,6 +14087,7 @@ xmlXPathNewSatisfiabilityExecCtxt(
     void* todoCallback = NULL;
     void* todoData = NULL;
     newCtx->modelExecCtxt = NULL;
+    newCtx->closureExecCtxt = NULL;
 
     return newCtx;
 }
@@ -14111,6 +14112,28 @@ todoCallback()
 }
 
 static int
+xmlXPathEvalSatisfiabilityOnSchema_child(
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    const char* name,
+    const void* todoData
+)
+{
+    if (ctxt == NULL || name == NULL) {
+        return (-1);
+    }
+    int ret2;
+    ret2 = xmlRegExecHasPath(ctxt->closureExecCtxt, name);
+    if (ret2 <= 0) {
+        return ret2;
+    }
+    ret2 = xmlRegExecPushString(ctxt->modelExecCtxt, name, todoData);
+    if (ret2 <= 0) {
+        return ret2;
+    }
+    return 1;
+}
+
+static int
 xmlXPathEvalSatisifabilityOnSchema(
     const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
     const xmlXPathStepOpPtr op
@@ -14131,7 +14154,13 @@ xmlXPathEvalSatisifabilityOnSchema(
         ctxt->modelExecCtxt = xmlRegNewExecCtxt(ctxt->verticalModel, NULL, NULL);
         if (ctxt->modelExecCtxt == NULL) {
             /* TODO improve error handling */
-            printf("ERROR: xmlRegNewExecCtxt allocation failed!\n");
+            printf("ERROR: xmlRegNewExecCtxt allocation failed for vertical model!\n");
+            return (-1);
+        }
+        ctxt->closureExecCtxt = xmlRegNewExecCtxt(ctxt->closure, NULL, NULL);
+        if (ctxt->closureExecCtxt == NULL) {
+            /* TODO improve error handling */
+            printf("ERROR: xmlRegNewExecCtxt allocation failed for closure!\n");
             return (-1);
         }
         return (1);
@@ -14153,10 +14182,15 @@ xmlXPathEvalSatisifabilityOnSchema(
             if (ret2 < 0) {
                 return ret2;
             } 
+            /* We don't have a (potential) direct child */
             else if (ret2 == 0) {
                 /* Hack that I have made to manipulate state machines that don't contain enough transitions  */
                 /* This case illustrates the case when having a descendant and we need to do the transition through the 
                    transitive closure. */
+                ret2 = xmlRegExecHasPath(ctxt->closureExecCtxt, name);
+                if (ret2 <= 0) {
+                    return ret2;
+                }
                 xmlRegExecSetState(ctxt->closureExecCtxt, xmlRegExecGetState(ctxt->modelExecCtxt));
                 ret3 = xmlRegExecPushString(ctxt->closureExecCtxt, name, todoData);
                 if (ret3 < 0) {
@@ -14166,19 +14200,11 @@ xmlXPathEvalSatisifabilityOnSchema(
                 return 1;
             }
             else {
-                int ret2 = xmlRegExecPushString(ctxt->modelExecCtxt, name, todoData);
-                if (ret2 < 0) {
-                    return ret2;
-                }
-                return 1;
+                return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
             }
         }
         else if (axis == AXIS_CHILD) {
-            int ret2 = xmlRegExecPushString(ctxt->modelExecCtxt, name, todoData);
-            if (ret2 < 0) {
-                return ret2;
-            }
-            return 1;
+            return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
         }
 
         /* TODO imp */
@@ -14206,7 +14232,7 @@ xmlXPathRunEvalSatisifability(todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt)
 
     int retVal;
     retVal = xmlXPathEvalSatisifabilityOnSchema(ctxt, &ctxt->comp->steps[ctxt->comp->last]);
-    if (retVal < 0) {
+    if (retVal <= 0) {
         return retVal;
     }
 
@@ -14350,6 +14376,7 @@ xmlXPathIsSatisfiableOnSchema(xmlXPathContextPtr ctx,
         goto cleanup;
     }
 
+    /* TODO remove this; put for debugging purposes */
     xmlXPathDebugDumpCompExpr(stdout, comp, 5);
 
     ret = xmlXPathRunEvalSatisifability(todo);
