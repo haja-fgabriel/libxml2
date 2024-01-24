@@ -1096,6 +1096,11 @@ struct _xmlIDCHashEntry {
  */
 struct _xmlSchemaVerifyXPathCtxt {
     int type;               /* Reserved for future use */
+    void* errCtxt;
+    xmlSchemaValidityErrorFunc error;       /* Error callback */
+    xmlSchemaValidityWarningFunc warning;   /* Warning callback */
+    xmlStructuredErrorFunc serror;
+
     xmlSchemaValidCtxtPtr schemaCtxt;
     const char* xpath;
     xmlRegexpPtr verticalModel;             /* The state machine that represents the vertical slices inside XML documents */
@@ -1105,9 +1110,6 @@ struct _xmlSchemaVerifyXPathCtxt {
     xmlAutomataStatePtr end;
     xmlAutomataStatePtr state;              /* Current state used when building vertical model */
 
-    void* errCtxt;
-    xmlSchemaValidityErrorFunc error;       /* Error callback */
-    xmlSchemaValidityWarningFunc warning;   /* Warning callback */
 
     xmlHashTablePtr rootElemDecl;           /* A mapping between elements that can be document roots and their states in the automata */
     xmlHashTablePtr otherElemDecl;          /* A mapping between elements that can be document roots and their states in the automata */
@@ -2111,6 +2113,21 @@ xmlSchemaVErrMemory(xmlSchemaValidCtxtPtr ctxt,
                      extra);
 }
 
+
+/**
+ * xmlSchemaVerifyXPathMemoryErr:
+ * @node: a context node
+ * @extra:  extra information
+ *
+ * Handle an out of memory condition
+ */
+static void
+xmlSchemaVerifyXPathMemoryErr(xmlSchemaVerifyXPathCtxtPtr ctxt,
+    const char* extra)
+{
+    __xmlSimpleError(XML_FROM_SCHEMASVXP, XML_ERR_NO_MEMORY, NULL, NULL, extra);
+}
+
 static void LIBXML_ATTR_FORMAT(2,0)
 xmlSchemaPSimpleInternalErr(xmlNodePtr node,
 			    const char *msg, const xmlChar *str)
@@ -2282,6 +2299,22 @@ xmlSchemaErr(xmlSchemaAbstractCtxtPtr actxt,
 	     const xmlChar *str1, const xmlChar *str2)
 {
     xmlSchemaErr4(actxt, error, node, msg, str1, str2, NULL, NULL);
+}
+
+
+static void LIBXML_ATTR_FORMAT(4, 0)
+xmlSchemaVerifyXPathErr(xmlSchemaVerifyXPathCtxtPtr ctxt,
+    int error, const char* msg,
+    const xmlChar* str1, const xmlChar* str2)
+{
+    if (ctxt != NULL) {
+        ctxt->nbErrors++;
+    }
+    __xmlRaiseError(NULL, NULL, NULL, ctxt,
+        NULL, XML_FROM_SCHEMASVXP, error,
+        XML_ERR_FATAL, NULL, 0,
+        (const char*)str1, (const char*)str2,
+        (const char*)NULL, 0, 0, msg, str1, str2, NULL, NULL);
 }
 
 static xmlChar *
@@ -29380,35 +29413,29 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
 
         if (state == NULL) {
             ctxt->nbErrors++;
-            fprintf(stderr, "oops, cannot add transition in schema graph\n");
-            /* WTF should I do here? */
-            /*__xmlRaiseError(NULL, ctxt->error, data, ctxt,
-                type->node, XML_FROM_SCHEMASVX,
-                error, errorLevel, file, line,
-                (const char*)str1, (const char*)str2,
-                (const char*)str3, 0, col, msg, str1, str2, str3, str4);
-            __xmlRaiseError(NULL, ctxt->error, )
-            xmlGenericError(xmlGenericErrorContext, "Error while adding transition in schema graph.");*/
-            /* TODO raise error */
+            xmlSchemaVerifyXPathMemoryErr(ctxt, 
+                "Could not create new transition for root node.");
             return;
         }
 
         if (xmlAutomataSetFinalState(ctxt->am, state) < 0) {
-            ctxt->nbErrors++;
-            /* TODO switch to proper error handling */
-            fprintf(stderr, "oops, cannot mark new automata state as final\n");
+            xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_NO_CHILD, 
+                "Could not prepare root node \"%s\" as potential leaf node.", 
+                type->name, NULL);
             return;
         }
-
-        if (xmlHashAddEntry(ctxt->rootElemDecl, type->name, state) < 0) {
-            ctxt->nbErrors++;
-            /* TODO switch to proper error handling */
-            fprintf(stderr, "oops, cannot map potential document root to automata state\n");
+        
+        xmlAutomataStatePtr hashEntry = xmlHashLookup(ctxt->rootElemDecl, type->name);
+        if (hashEntry == NULL &&
+            xmlHashAddEntry(ctxt->rootElemDecl, type->name, state) < 0) {
+            xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_NO_ADD_ROOT_HASH_ENTRY,
+                "Cannot add a mapping to automata state of potential document root",
+                type->name, NULL);
             return;
         }
-        /*printf("ok transition is added\n");*/
     }
     else {
+        /*xmlSchemaErr(ctxt, )*/
         printf("ok, we have element that cannot be root in the XML document\n");
     }
 
@@ -29595,7 +29622,8 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
 
     ctxt->am = xmlNewAutomata();
     if (ctxt->am == NULL) {
-        xmlGenericError(ctxt, "Memory allocation error when verifying XPath query on schema");
+        xmlSchemaVerifyXPathMemoryErr(ctxt, 
+            "Memory allocation error when verifying XPath query on schema");
         return (-1);
     }
 
@@ -29609,6 +29637,7 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
 
     xmlHashScanFull(schema->elemDecl, xmlSchemaAddPathsToChildrenInClosure, ctxt);
     if (ctxt->nbErrors) {
+        xmlFreeAutomata(ctxt->am);
         return (-1);
     }
 
@@ -29621,6 +29650,7 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     xmlRegexpPtr transitiveClosure = xmlRegexpBuildTransitiveClosure(ctxt->verticalModel);
     if (transitiveClosure == NULL) {
         xmlRegFreeRegexp(ctxt->verticalModel);
+        xmlFreeAutomata(ctxt->am);
         return (-1);
     }
 

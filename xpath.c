@@ -782,6 +782,32 @@ xmlXPatherror(xmlXPathParserContextPtr ctxt, const char *file ATTRIBUTE_UNUSED,
     xmlXPathErr(ctxt, no);
 }
 
+
+/**
+ * xmlXPathVerifySatisfiabilityError:
+ * @ctxt:  the XPath satisfiability verification context
+ * @error:  the error code
+ * @msg:  the message
+ * @str1:  extra data
+ * @str2:  extra data
+ *
+ * Formats an error message for XPath satisfiability check.
+ */
+void
+xmlXPathVerifySatisfiabilityError(
+    todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    int error,
+    const char* msg,
+    const xmlChar* str1,
+    const xmlChar* str2
+)
+{
+    __xmlRaiseError(NULL, NULL, NULL,
+        NULL, NULL, XML_FROM_XPATH,
+        error, XML_ERR_FATAL, NULL, 0,
+        str1, str2, NULL, 0, 0, msg);
+}
+
 /**
  * xmlXPathCheckOpLimit:
  * @ctxt:  the XPath Parser context
@@ -14059,8 +14085,6 @@ struct _todo_xmlXPathSatisfiabilityExecCtxt {
     xmlRegExecCtxtPtr closureExecCtxt;
     int depth;
 };
-typedef struct _todo_xmlXPathSatisfiabilityExecCtxt todo_xmlXPathSatisfiabilityExecCtxt;
-typedef todo_xmlXPathSatisfiabilityExecCtxt* todo_xmlXPathSatisfiabilityExecCtxtPtr;
 
 static todo_xmlXPathSatisfiabilityExecCtxtPtr
 xmlXPathNewSatisfiabilityExecCtxt(
@@ -14124,6 +14148,9 @@ xmlXPathEvalSatisfiabilityOnSchema_child(
     int ret2;
     ret2 = xmlRegExecHasPath(ctxt->closureExecCtxt, name);
     if (ret2 <= 0) {
+        /* TODO debug XML_GET_VAR_STR(msg, str) definition from __xmlRaiseError */
+        xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_NO_PATH,
+            "No path possible to node \"%s\".", name, NULL);
         return ret2;
     }
     ret2 = xmlRegExecPushString(ctxt->modelExecCtxt, name, todoData);

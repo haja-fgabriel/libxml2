@@ -1,6 +1,10 @@
 #ifndef XML_XPATH_H_PRIVATE__
 #define XML_XPATH_H_PRIVATE__
 
+
+typedef struct _todo_xmlXPathSatisfiabilityExecCtxt todo_xmlXPathSatisfiabilityExecCtxt XML_HIDDEN;
+typedef todo_xmlXPathSatisfiabilityExecCtxt* todo_xmlXPathSatisfiabilityExecCtxtPtr XML_HIDDEN;
+
 XML_HIDDEN void
 xmlInitXPathInternal(void);
 

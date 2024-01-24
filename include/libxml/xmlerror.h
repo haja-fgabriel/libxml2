@@ -64,7 +64,8 @@ typedef enum {
     XML_FROM_I18N,	/* The module handling character conversion */
     XML_FROM_SCHEMATRONV,/* The Schematron validator module */
     XML_FROM_BUFFER,    /* The buffers module */
-    XML_FROM_URI        /* The URI module */
+    XML_FROM_URI,       /* The URI module */
+    XML_FROM_SCHEMASVXP,/* The W3C XML Schemas XPath verification module */
 } xmlErrorDomain;
 
 /**
@@ -406,6 +407,7 @@ typedef enum {
     XML_XPATH_UNDEF_PREFIX_ERROR, /* 1219 */
     XML_XPATH_ENCODING_ERROR, /* 1220 */
     XML_XPATH_INVALID_CHAR_ERROR, /* 1221 */
+    XML_XPATH_SATISFIABILITY_NO_PATH = 1250,
     XML_TREE_INVALID_HEX = 1300,
     XML_TREE_INVALID_DEC, /* 1301 */
     XML_TREE_UNTERMINATED_ENTITY, /* 1302 */
@@ -676,6 +678,11 @@ typedef enum {
     XML_SCHEMAV_CVC_IDC, /* 1877 */
     XML_SCHEMAV_CVC_WILDCARD, /* 1878 */
     XML_SCHEMAV_MISC, /* 1879 */
+    XML_SCHEMAV_XPATHV_XPATHPARSE = 1890,
+    XML_SCHEMAV_XPATHV_VERTICAL_MODEL, /* 1891 */
+    XML_SCHEMAV_XPATHV_NO_CHILD, /* 1892 */
+    XML_SCHEMAV_XPATHV_NO_SET_FINALSTATE, /* 1893 */
+    XML_SCHEMAV_XPATHV_NO_ADD_ROOT_HASH_ENTRY, /* 1894 */
     XML_XPTR_UNKNOWN_SCHEME = 1900,
     XML_XPTR_CHILDSEQ_START, /* 1901 */
     XML_XPTR_EVAL_FAILED, /* 1902 */
