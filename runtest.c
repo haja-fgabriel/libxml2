@@ -472,6 +472,9 @@ testStructuredErrorHandler(void *ctx  ATTRIBUTE_UNUSED, xmlErrorPtr err) {
         case XML_FROM_SCHEMASP:
             channel(data, "Schemas parser ");
             break;
+        case XML_FROM_SCHEMASVXP:
+            channel(data, "Schemas XPath verification ");
+            break;
         case XML_FROM_RELAXNGP:
             channel(data, "Relax-NG parser ");
             break;
@@ -3498,7 +3501,7 @@ schemasOneTest(const char *sch,
         } else {
             /* TODO load XPath queries from a file */
             printf("Running XPath verification against schema tests...\n");
-            xmlChar* query = "//GR.SEQ/TBL/ROW";
+            xmlChar* query = "//GR.SEQ/TBL/ROOW";
 
             xmlSchemaVerifyXPathCtxtPtr verifyCtxt = xmlSchemaNewVerifyXPathCtxt(ctxt, query);
             if (verifyCtxt == NULL) {
@@ -3511,16 +3514,11 @@ schemasOneTest(const char *sch,
             validResult = xmlSchemaVerifyXPath(verifyCtxt);
 
             xmlSchemaFreeVerifyXPathCtxt(verifyCtxt);
-
-            /* Skip file comparison, as we are going to treat it differently */
-            unlink(temp);
-            xmlSchemaFreeValidCtxt(ctxt);
-            continue;
         }
 
-        if (validResult == 0) {
+        if ((i <= 1 && validResult == 0) || (i > 1 && validResult == 1)) {
             fprintf(schemasOutput, "%s validates\n", filename);
-        } else if (validResult > 0) {
+        } else if ((i <= 1 && validResult == 1) || (i > 1 && validResult == 0)) {
             fprintf(schemasOutput, "%s fails to validate\n", filename);
         } else {
             fprintf(schemasOutput, "%s validation generated an internal error\n",
