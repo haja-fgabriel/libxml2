@@ -805,7 +805,7 @@ xmlXPathVerifySatisfiabilityError(
     __xmlRaiseError(NULL, NULL, NULL,
         NULL, NULL, XML_FROM_XPATH,
         error, XML_ERR_FATAL, NULL, 0,
-        str1, str2, NULL, 0, 0, msg);
+        str1, str2, NULL, 0, 0, msg, str1, str2);
 }
 
 /**
