@@ -14146,9 +14146,8 @@ xmlXPathEvalSatisfiabilityOnSchema_child(
         return (-1);
     }
     int ret2;
-    ret2 = xmlRegExecHasPath(ctxt->closureExecCtxt, name);
+    ret2 = xmlRegExecHasPath(ctxt->modelExecCtxt, name);
     if (ret2 <= 0) {
-        /* TODO debug XML_GET_VAR_STR(msg, str) definition from __xmlRaiseError */
         xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_NO_PATH,
             "No path possible to node \"%s\".", name, NULL);
         return ret2;
