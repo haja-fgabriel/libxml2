@@ -13938,7 +13938,7 @@ xmlXPathRunEval(xmlXPathParserContextPtr ctxt, int toBool)
 {
     xmlXPathCompExprPtr comp;
     int oldDepth;
-
+    
     if ((ctxt == NULL) || (ctxt->comp == NULL))
 	return(-1);
 
@@ -14238,6 +14238,14 @@ xmlXPathEvalSatisifabilityOnSchema(
         const xmlChar* prefix = op->value4;
         const xmlChar* name = op->value5;
 
+        /* TODO evaluate predicates */
+        if (op->ch2 != -1) {
+            xmlXPathStepOpPtr pred = &ctxt->comp->steps[op->ch2];
+            xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_AXIS_NOT_TREATED,
+                "For node \"%s\": no support for predicates implemented yet\n", name, NULL);
+            return (-1);
+        }
+
         /* TODO add more cases */
         if (axis == AXIS_DESCENDANT) {
             ret2 = xmlRegExecHasPath(ctxt->modelExecCtxt, name);
@@ -14262,10 +14270,18 @@ xmlXPathEvalSatisifabilityOnSchema(
                 return 1;
             }
             else {
+                /* TODO add more context to the error inside this function:
+                   you should add the current `op` argument either as a function
+                   argument to xmlXPathEvalSatisfiabilityOnSchema_child, or 
+                   as a member of the struct todo_xmlXPathSatisfiabilityExecCtxtPtr */
                 return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
             }
         }
         else if (axis == AXIS_CHILD) {
+            /* TODO add more context to the error inside this function:
+               you should add the current `op` argument either as a function
+               argument to xmlXPathEvalSatisfiabilityOnSchema_child, or
+               as a member of the struct todo_xmlXPathSatisfiabilityExecCtxtPtr */
             return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
         }
 

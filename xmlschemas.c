@@ -2125,6 +2125,9 @@ static void
 xmlSchemaVerifyXPathMemoryErr(xmlSchemaVerifyXPathCtxtPtr ctxt,
     const char* extra)
 {
+    if (ctxt != NULL) {
+        ctxt->nbErrors++;
+    }
     __xmlSimpleError(XML_FROM_SCHEMASVXP, XML_ERR_NO_MEMORY, NULL, NULL, extra);
 }
 
@@ -29412,7 +29415,6 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
 
 
         if (state == NULL) {
-            ctxt->nbErrors++;
             xmlSchemaVerifyXPathMemoryErr(ctxt, 
                 "Could not create new transition for root node.");
             return;
@@ -29435,7 +29437,6 @@ xmlSchemaAddNodeToTransitiveClosure(void* payload, void* output,
         }
     }
     else {
-        /*xmlSchemaErr(ctxt, )*/
         printf("ok, we have element that cannot be root in the XML document\n");
     }
 
@@ -29576,20 +29577,17 @@ xmlSchemaAddPathsToChildrenInClosure(void* payload, void* output,
         xmlStrEqual(type->node->parent->name, "schema")) {
         xmlAutomataStatePtr state = xmlHashLookup(ctxt->rootElemDecl, type->name); 
         if (state == NULL) {
-            ctxt->nbErrors++;
-            /* TODO switch to proper error handling */
-            fprintf(stderr, "oops, cannot map potential document root to automata state\n");
+            xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
+                "Could not map potential document root \"%s\" to automata state.\n", type->name, NULL);
             return;
         }
         ctxt->state = state;
 
         if (xmlSchemaBuildSchemaModelForVerifyXPath(ctxt, WXS_TYPE_PARTICLE(type->subtypes)) < 0) {
-            ctxt->nbErrors++;
-            /* TODO switch to proper error handling */
-            fprintf(stderr, "oops, cannot add transitions to other nodes\n");
+            xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
+                "Could not add transition for node \"%s\" to other nodes.\n", type->name, NULL);
             return;
         }
-        /*printf("ok we have found the root node in the hash table\n");*/
     }
     else {
         printf("ok, we have element that cannot be root in the XML document\n");
@@ -29655,11 +29653,15 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     int ret; 
     ret = xmlSchemaCreateVerticalModelForVerifyXPath(ctxt);
     if (ret < 0) {
+        xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
+            "Could not create the vertical model.\n", NULL, NULL);
         return (-1);
     }
 
     xmlRegexpPtr transitiveClosure = xmlRegexpBuildTransitiveClosure(ctxt->verticalModel);
     if (transitiveClosure == NULL) {
+        xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
+            "Could not create the transitive closure of the vertical model.\n", NULL, NULL);
         xmlRegFreeRegexp(ctxt->verticalModel);
         xmlFreeAutomata(ctxt->am);
         return (-1);
