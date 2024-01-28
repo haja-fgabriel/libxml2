@@ -809,6 +809,44 @@ xmlXPathVerifySatisfiabilityError(
 }
 
 /**
+ * xmlXPathVerifySatisfiabilityMemoryErr:
+ * @extra:  extra data
+ *
+ * Formats an error message for memory errors in XPath satisfiability check.
+ */
+void
+xmlXPathVerifySatisfiabilityMemoryErr(const char* extra)
+{
+    __xmlSimpleError(XML_FROM_XPATH, XML_ERR_NO_MEMORY, NULL, NULL, extra);
+}
+
+/**
+ * xmlXPathVerifySatisfiabilityAxisNotImplementedError:
+ * @ctxt:  the XPath satisfiability check context
+ * @axis:  the non-existing axis
+ *
+ * Formats an error message for XPath satisfiability check.
+ */
+void
+xmlXPathVerifySatisfiabilityAxisNotImplementedError(
+    todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    int axis)
+{
+    /* TODO imp */
+    char msg[100];
+    int ret = xmlStrPrintf(BAD_CAST msg, sizeof(msg) / sizeof(char),
+        "Axis %d not implemented; please see values in enum xmlXPathAxisVal\n", axis);
+    if (ret < 0) {
+        xmlXPathVerifySatisfiabilityMemoryErr("while preparing "
+            "message \"Axis ... not implemented\"");
+        return (-1);
+    }
+    xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_AXIS_NOT_TREATED,
+        msg, NULL, NULL);
+}
+
+
+/**
  * xmlXPathCheckOpLimit:
  * @ctxt:  the XPath Parser context
  * @opCount:  the number of operations to be added
@@ -14179,14 +14217,12 @@ xmlXPathEvalSatisifabilityOnSchema(
         /* TODO start the magic here */
         ctxt->modelExecCtxt = xmlRegNewExecCtxt(ctxt->verticalModel, NULL, NULL);
         if (ctxt->modelExecCtxt == NULL) {
-            /* TODO improve error handling */
-            printf("ERROR: xmlRegNewExecCtxt allocation failed for vertical model!\n");
+            xmlXPathVerifySatisfiabilityMemoryErr("for context of vertical model\n");
             return (-1);
         }
         ctxt->closureExecCtxt = xmlRegNewExecCtxt(ctxt->closure, NULL, NULL);
         if (ctxt->closureExecCtxt == NULL) {
-            /* TODO improve error handling */
-            printf("ERROR: xmlRegNewExecCtxt allocation failed for closure!\n");
+            xmlXPathVerifySatisfiabilityMemoryErr("for context of closure of vertical model\n");
             return (-1);
         }
         return (1);
@@ -14233,8 +14269,7 @@ xmlXPathEvalSatisifabilityOnSchema(
             return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
         }
 
-        /* TODO imp */
-        printf("Axis %d not implemented yet\n", axis);
+        xmlXPathVerifySatisfiabilityAxisNotImplementedError(ctxt, axis);
         return (-1);
         /* TODO magic */
     case XPATH_OP_END:
