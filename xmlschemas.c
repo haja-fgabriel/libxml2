@@ -29599,30 +29599,14 @@ xmlSchemaAddPathsToChildrenInClosure(void* payload, void* output,
     return;
 }
 
-/**
- * xmlSchemaVerifyXPath:
- * @ctxt: a schema validation context
- * @str: the XPath query (must be relative from the document root)
- * 
- * Verify if the given XPath query is satisfiable on the given schema.
- *   An XPath query is satisfiable if there is any XML document that
- *   returns at least one entry using the @str query.
- * 
- * Returns 1 if it is satisfiable or 0 if it doesn't.
- * Other error codes:
- *   -1 if any of the arguments
-*/
-int 
-xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt) 
+static int
+xmlSchemaCreateVerticalModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
 {
-    if (ctxt == NULL) {
-        return (-1);
-    }
     xmlSchemaPtr schema = ctxt->schemaCtxt->schema;
 
     ctxt->am = xmlNewAutomata();
     if (ctxt->am == NULL) {
-        xmlSchemaVerifyXPathMemoryErr(ctxt, 
+        xmlSchemaVerifyXPathMemoryErr(ctxt,
             "Memory allocation error when verifying XPath query on schema");
         return (-1);
     }
@@ -29646,6 +29630,33 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
         xmlFreeAutomata(ctxt->am);
         return (-1);
     }
+}
+
+/**
+ * xmlSchemaVerifyXPath:
+ * @ctxt: a schema validation context
+ * @str: the XPath query (must be relative from the document root)
+ * 
+ * Verify if the given XPath query is satisfiable on the given schema.
+ *   An XPath query is satisfiable if there is any XML document that
+ *   returns at least one entry using the @str query.
+ * 
+ * Returns 1 if it is satisfiable or 0 if it doesn't.
+ * Other error codes:
+ *   -1 if any of the arguments
+*/
+int 
+xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt) 
+{
+    if (ctxt == NULL) {
+        return (-1);
+    }
+    
+    int ret; 
+    ret = xmlSchemaCreateVerticalModelForVerifyXPath(ctxt);
+    if (ret < 0) {
+        return (-1);
+    }
 
     xmlRegexpPtr transitiveClosure = xmlRegexpBuildTransitiveClosure(ctxt->verticalModel);
     if (transitiveClosure == NULL) {
@@ -29655,7 +29666,7 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     }
 
     /* TODO verification for relative XPath queries*/
-    int ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->verticalModel, transitiveClosure);
+    ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->verticalModel, transitiveClosure);
 
     xmlRegFreeRegexp(transitiveClosure);
     xmlRegFreeRegexp(ctxt->verticalModel);
