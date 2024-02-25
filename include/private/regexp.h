@@ -30,6 +30,9 @@ xmlRegExecSetState(xmlRegExecCtxtPtr ctxt, int state);
 XML_HIDDEN int
 xmlRegExecIsInFinalState(xmlRegExecCtxtPtr ctxt);
 
+XML_HIDDEN int
+xmlRegExecIsInInitialState(xmlRegExecCtxtPtr ctxt);
+
 XML_HIDDEN xmlRegExecCtxtPtr
 xmlRegCopyExecCtxt(xmlRegExecCtxtPtr exec);
 
