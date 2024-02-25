@@ -783,6 +783,23 @@ xmlXPatherror(xmlXPathParserContextPtr ctxt, const char *file ATTRIBUTE_UNUSED,
 }
 
 
+static void
+xmlXPathVerifySatisfiabilityErrorInternal(
+    todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    xmlErrorLevel errLevel,
+    int error,
+    const char* msg,
+    const xmlChar* str1,
+    const xmlChar* str2
+)
+{
+    __xmlRaiseError(NULL, NULL, NULL,
+        NULL, NULL, XML_FROM_XPATH,
+        error, errLevel, NULL, 0,
+        str1, str2, NULL, 0, 0, msg, str1, str2);
+}
+
+
 /**
  * xmlXPathVerifySatisfiabilityError:
  * @ctxt:  the XPath satisfiability verification context
@@ -802,10 +819,31 @@ xmlXPathVerifySatisfiabilityError(
     const xmlChar* str2
 )
 {
-    __xmlRaiseError(NULL, NULL, NULL,
-        NULL, NULL, XML_FROM_XPATH,
-        error, XML_ERR_FATAL, NULL, 0,
-        str1, str2, NULL, 0, 0, msg, str1, str2);
+    xmlXPathVerifySatisfiabilityErrorInternal(ctxt, XML_ERR_FATAL, error, 
+        msg, str1, str2);
+}
+
+/**
+ * xmlXPathVerifySatisfiabilityWarning:
+ * @ctxt:  the XPath satisfiability verification context
+ * @error:  the error code
+ * @msg:  the message
+ * @str1:  extra data
+ * @str2:  extra data
+ *
+ * Formats a warning message for XPath satisfiability check.
+ */
+void
+xmlXPathVerifySatisfiabilityWarning(
+    todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    int error,
+    const char* msg,
+    const xmlChar* str1,
+    const xmlChar* str2
+)
+{
+    xmlXPathVerifySatisfiabilityErrorInternal(ctxt, XML_ERR_WARNING, error,
+        msg, str1, str2);
 }
 
 /**
@@ -14186,7 +14224,7 @@ xmlXPathEvalSatisfiabilityOnSchema_child(
     int ret2;
     ret2 = xmlRegExecHasPath(ctxt->modelExecCtxt, name);
     if (ret2 <= 0) {
-        xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_NO_PATH,
+        xmlXPathVerifySatisfiabilityWarning(ctxt, XML_XPATH_SATISFIABILITY_NO_PATH,
             "No path possible to node \"%s\".", name, NULL);
         return ret2;
     }
@@ -14195,6 +14233,104 @@ xmlXPathEvalSatisfiabilityOnSchema_child(
         return ret2;
     }
     return 1;
+}
+
+static int 
+xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    const xmlXPathStepOpPtr op,
+    void* todoData
+)
+{
+    xmlXPathAxisVal axis = (xmlXPathAxisVal)op->value;
+    xmlXPathTestVal test = (xmlXPathTestVal)op->value2;
+    xmlXPathTypeVal type = (xmlXPathTypeVal)op->value3;
+    const xmlChar* prefix = op->value4;
+    const xmlChar* name = op->value5;
+
+    int ret2;
+    int ret3;
+    ret2 = xmlRegExecHasPath(ctxt->modelExecCtxt, name);
+    if (ret2 < 0) {
+        return ret2;
+    }
+    /* We don't have a (potential) direct child */
+    else if (ret2 == 0) {
+        /* Hack that I have made to manipulate state machines that don't contain enough transitions  */
+        /* This case illustrates the case when having a descendant and we need to do the transition through the
+           transitive closure. */
+        ret2 = xmlRegExecHasPath(ctxt->closureExecCtxt, name);
+        if (ret2 <= 0) {
+            return ret2;
+        }
+        xmlRegExecSetState(ctxt->closureExecCtxt, xmlRegExecGetState(ctxt->modelExecCtxt));
+        ret3 = xmlRegExecPushString(ctxt->closureExecCtxt, name, todoData);
+        if (ret3 < 0) {
+            return ret3;
+        }
+        xmlRegExecSetState(ctxt->modelExecCtxt, xmlRegExecGetState(ctxt->closureExecCtxt));
+        return 1;
+    }
+    else {
+        /* TODO add more context to the error inside this function:
+           you should add the current `op` argument either as a function
+           argument to xmlXPathEvalSatisfiabilityOnSchema_child, or
+           as a member of the struct todo_xmlXPathSatisfiabilityExecCtxtPtr */
+        return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
+    }
+}
+
+static int
+xmlXPathEvalSatisfiabilityOnSchema_collect(
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    const xmlXPathStepOpPtr op,
+    void* todoData
+)
+{
+    xmlXPathAxisVal axis = (xmlXPathAxisVal)op->value;
+    xmlXPathTestVal test = (xmlXPathTestVal)op->value2;
+    xmlXPathTypeVal type = (xmlXPathTypeVal)op->value3;
+    const xmlChar* prefix = op->value4;
+    const xmlChar* name = op->value5;
+
+    int ret2;
+    int ret3;
+
+    /* TODO evaluate predicates */
+    if (op->ch2 != -1) {
+        xmlXPathStepOpPtr pred = &ctxt->comp->steps[op->ch2];
+        xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_NOT_IMPLEMENTED,
+            "For node \"%s\": no support for predicates implemented yet\n", name, NULL);
+        return (-1);
+    }
+
+    switch (axis) {
+    case AXIS_DESCENDANT:
+        return xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(ctxt, op, todoData);
+    case AXIS_DESCENDANT_OR_SELF:
+        /* TODO evaluate both descendant AND self variants */
+        return (-1);
+    case AXIS_SELF:
+        ret2 = xmlRegExecIsInInitialState(ctxt->modelExecCtxt);
+        if (ret2 < 0) {
+            return (-1);
+        }
+        else if (ret2 > 0) {
+            xmlXPathVerifySatisfiabilityWarning(ctxt, XML_XPATH_SATISFIABILITY_NO_NODE,
+                "No node found for relative self::%s axis evaluation\n", name, NULL);
+            return 0;
+        }
+        return (1);
+    case AXIS_CHILD:
+        /* TODO add more context to the error inside this function:
+           you should add the current `op` argument either as a function
+           argument to xmlXPathEvalSatisfiabilityOnSchema_child, or
+           as a member of the struct todo_xmlXPathSatisfiabilityExecCtxtPtr */
+        return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
+    default:
+        xmlXPathVerifySatisfiabilityAxisNotImplementedError(ctxt, axis);
+    }
+    return (-1);
 }
 
 static int
@@ -14231,63 +14367,7 @@ xmlXPathEvalSatisifabilityOnSchema(
         if (ret <= 0) {
             return ret;
         }
-
-        xmlXPathAxisVal axis = (xmlXPathAxisVal)op->value;
-        xmlXPathTestVal test = (xmlXPathTestVal)op->value2;
-        xmlXPathTypeVal type = (xmlXPathTypeVal)op->value3;
-        const xmlChar* prefix = op->value4;
-        const xmlChar* name = op->value5;
-
-        /* TODO evaluate predicates */
-        if (op->ch2 != -1) {
-            xmlXPathStepOpPtr pred = &ctxt->comp->steps[op->ch2];
-            xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_AXIS_NOT_TREATED,
-                "For node \"%s\": no support for predicates implemented yet\n", name, NULL);
-            return (-1);
-        }
-
-        /* TODO add more cases */
-        if (axis == AXIS_DESCENDANT) {
-            ret2 = xmlRegExecHasPath(ctxt->modelExecCtxt, name);
-            if (ret2 < 0) {
-                return ret2;
-            } 
-            /* We don't have a (potential) direct child */
-            else if (ret2 == 0) {
-                /* Hack that I have made to manipulate state machines that don't contain enough transitions  */
-                /* This case illustrates the case when having a descendant and we need to do the transition through the 
-                   transitive closure. */
-                ret2 = xmlRegExecHasPath(ctxt->closureExecCtxt, name);
-                if (ret2 <= 0) {
-                    return ret2;
-                }
-                xmlRegExecSetState(ctxt->closureExecCtxt, xmlRegExecGetState(ctxt->modelExecCtxt));
-                ret3 = xmlRegExecPushString(ctxt->closureExecCtxt, name, todoData);
-                if (ret3 < 0) {
-                    return ret3;
-                }
-                xmlRegExecSetState(ctxt->modelExecCtxt, xmlRegExecGetState(ctxt->closureExecCtxt));
-                return 1;
-            }
-            else {
-                /* TODO add more context to the error inside this function:
-                   you should add the current `op` argument either as a function
-                   argument to xmlXPathEvalSatisfiabilityOnSchema_child, or 
-                   as a member of the struct todo_xmlXPathSatisfiabilityExecCtxtPtr */
-                return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
-            }
-        }
-        else if (axis == AXIS_CHILD) {
-            /* TODO add more context to the error inside this function:
-               you should add the current `op` argument either as a function
-               argument to xmlXPathEvalSatisfiabilityOnSchema_child, or
-               as a member of the struct todo_xmlXPathSatisfiabilityExecCtxtPtr */
-            return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
-        }
-
-        xmlXPathVerifySatisfiabilityAxisNotImplementedError(ctxt, axis);
-        return (-1);
-        /* TODO magic */
+        return xmlXPathEvalSatisfiabilityOnSchema_collect(ctxt, op, todoData);
     case XPATH_OP_END:
         return (1);
     case XPATH_OP_SORT:
