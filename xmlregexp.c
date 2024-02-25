@@ -4602,6 +4602,17 @@ xmlRegExecIsInFinalState(xmlRegExecCtxtPtr ctxt)
     return (comp->compact[state * (comp->nbstrings + 1)] == XML_REGEXP_FINAL_STATE);
 }
 
+int
+xmlRegExecIsInInitialState(xmlRegExecCtxtPtr ctxt)
+{
+    /* TODO implement for non-compact representation of finite automata */
+    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact == NULL) {
+        return (-1);
+    }
+
+    return (ctxt->index == 0);
+}
+
 #ifdef DEBUG_ERR
 static void testerr(xmlRegExecCtxtPtr exec) {
     const xmlChar *string;
