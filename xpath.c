@@ -14300,6 +14300,42 @@ xmlXPathEvalSatisfiabilityOnSchema_child(
     return 1;
 }
 
+static int
+xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendantOrSelf(
+    const _xmlQueueNodeDataType* currentState,
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    const xmlXPathStepOpPtr op,
+    void* todoData
+)
+{
+    /* TODO transform current op into descendant and add another 
+     * state in the queue with the `self` axis */
+    return (-1);
+}
+
+static int
+xmlXPathEvalSatisfiabilityOnSchema_collect_axisSelf(
+    const _xmlQueueNodeDataType* currentState,
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    const xmlXPathStepOpPtr op,
+    void* todoData
+)
+{
+    int ret2;
+    const char* name = op->value5;
+
+    ret2 = xmlRegExecIsInInitialState(ctxt->modelExecCtxt);
+    if (ret2 < 0) {
+        return (-1);
+    }
+    else if (ret2 > 0) {
+        xmlXPathVerifySatisfiabilityWarning(ctxt, XML_XPATH_SATISFIABILITY_NO_NODE,
+            "No node found for relative self::%s axis evaluation\n", name, NULL);
+        return 0;
+    }
+    return (1);
+}
+
 static int 
 xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
     const _xmlQueueNodeDataType* currentState,
@@ -14403,6 +14439,7 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
 
 static int
 xmlXPathEvalSatisfiabilityOnSchema_predicate(
+    const _xmlQueueNodeDataType* currentState,
     const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
     const xmlXPathStepOpPtr op,
     void* todoData
@@ -14436,7 +14473,9 @@ xmlXPathEvalSatisfiabilityOnSchema_collect(
 
     /* TODO evaluate predicates */
     if (op->ch2 != -1) {
-        return xmlXPathEvalSatisfiabilityOnSchema_predicate(
+        return xmlXPathQueueIteratePredicates(
+            &ctxt->resolutionQueue,
+            xmlXPathEvalSatisfiabilityOnSchema_predicate,
             ctxt,
             &ctxt->comp->steps[op->ch2],
             todoData
@@ -14455,18 +14494,21 @@ xmlXPathEvalSatisfiabilityOnSchema_collect(
         /* return xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(ctxt, op, todoData); */
     case AXIS_DESCENDANT_OR_SELF:
         /* TODO evaluate both descendant AND self variants */
-        return (-1);
+        return xmlXPathQueueIteratePredicates(
+            &ctxt->resolutionQueue,
+            xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendantOrSelf,
+            ctxt,
+            op,
+            todoData
+        );
     case AXIS_SELF:
-        ret2 = xmlRegExecIsInInitialState(ctxt->modelExecCtxt);
-        if (ret2 < 0) {
-            return (-1);
-        }
-        else if (ret2 > 0) {
-            xmlXPathVerifySatisfiabilityWarning(ctxt, XML_XPATH_SATISFIABILITY_NO_NODE,
-                "No node found for relative self::%s axis evaluation\n", name, NULL);
-            return 0;
-        }
-        return (1);
+        return xmlXPathQueueIteratePredicates(
+            &ctxt->resolutionQueue,
+            xmlXPathEvalSatisfiabilityOnSchema_collect_axisSelf,
+            ctxt,
+            op,
+            todoData
+        );
     case AXIS_CHILD:
         /* TODO add more context to the error inside this function:
            you should add the current `op` argument either as a function
