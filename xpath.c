@@ -14046,16 +14046,24 @@ xmlXPathRunEval(xmlXPathParserContextPtr ctxt, int toBool)
 #if defined(LIBXML_XPATH_ENABLED)
 
 struct xmlXPathQueueNodeData {
+    /* the execution context  */
     xmlRegExecCtxtPtr execCtx;
+
+    /* a second execution context (e.g.: for the closure of the first one) */
+    xmlRegExecCtxtPtr execCtx2;
+
+    /* the XPath operation to be evaluated */
+    xmlXPathStepOpPtr op;
     int xpathIndex;
 };
 
 /* Placeholder type */
 typedef struct xmlXPathQueueNodeData _xmlQueueNodeDataType;
+typedef _xmlQueueNodeDataType* _xmlQueueNodeDataTypePtr;
 
 struct _xmlXPathQueueNode {
-    _xmlQueueNodeDataType data;
     struct _xmlXPathQueueNode* next;
+    _xmlQueueNodeDataType data;
 };
 typedef struct _xmlXPathQueueNode xmlXPathQueueNode;
 typedef xmlXPathQueueNode* xmlXPathQueueNodePtr;
@@ -14126,7 +14134,7 @@ xmlXPathQueuePush(xmlXPathQueuePtr queue, _xmlQueueNodeDataType data)
 }
 
 static int
-xmlXPathQueuePop(xmlXPathQueuePtr queue, _xmlQueueNodeDataType* data)
+xmlXPathQueuePop(xmlXPathQueuePtr queue, _xmlQueueNodeDataTypePtr* data)
 {
     if (queue == NULL || queue->size == 0) {
         return (-1);
@@ -14134,7 +14142,7 @@ xmlXPathQueuePop(xmlXPathQueuePtr queue, _xmlQueueNodeDataType* data)
 
     xmlXPathQueueNodePtr node = queue->start;
     if (data) {
-        *data = node->data;
+        *data = &node->data;
     }
 
     queue->start = node->next;
@@ -14147,6 +14155,49 @@ xmlXPathQueuePop(xmlXPathQueuePtr queue, _xmlQueueNodeDataType* data)
     return 0;
 }
 
+typedef int (*xmlXPathQueueCallback)(_xmlQueueNodeDataTypePtr nodeData, void* data, void* data2, void* data3);
+
+static int
+xmlXPathQueueIteratePredicates(
+    xmlXPathQueuePtr queue, 
+    xmlXPathQueueCallback callback,
+    void* data,
+    void* data2,
+    void* data3
+)
+{
+    if (queue == NULL) {
+        return (-1);
+    }
+    int ret;
+    int retAll = 1;
+
+    xmlXPathQueueNodePtr node = queue->start;
+
+    /* Use the initial end, to not iterate through the nodes that have been added
+     * afterwise. */
+    xmlXPathQueueNodePtr queueEnd = queue->end;
+    while (node != NULL) {
+        ret = callback(&node->data, data, data2, data3);
+        
+        /* Evaluate return value from the callback */
+        if (ret < 0) {
+            return (-1);
+        }
+        else if (ret == 0) {
+            retAll = 0;
+        }
+
+        /* Do not iterate through nodes that have been added in the callback */
+        if (node == queue->end) {
+            break;
+        }
+        node = node->next;
+    }
+
+    return retAll;
+}
+
 #if defined(LIBXML_SCHEMAS_ENABLED)
 
 struct _todo_xmlXPathSatisfiabilityExecCtxt {
@@ -14156,7 +14207,7 @@ struct _todo_xmlXPathSatisfiabilityExecCtxt {
     xmlXPathCompExprPtr comp;
 
     /* Members used inside the context, but not passed by the user */
-    xmlXPathQueue queue;
+    xmlXPathQueue resolutionQueue;
     xmlRegExecCtxtPtr modelExecCtxt;
     xmlRegExecCtxtPtr closureExecCtxt;
     int depth;
@@ -14182,7 +14233,7 @@ xmlXPathNewSatisfiabilityExecCtxt(
     newCtx->comp = comp;
     newCtx->depth = 0;
 
-    xmlXPathInitQueue(&newCtx->queue);
+    xmlXPathInitQueue(&newCtx->resolutionQueue);
     
     void* todoCallback = NULL;
     void* todoData = NULL;
@@ -14190,6 +14241,13 @@ xmlXPathNewSatisfiabilityExecCtxt(
     newCtx->closureExecCtxt = NULL;
 
     return newCtx;
+}
+
+static void
+xmlXPathFreeQueueNodeData(_xmlQueueNodeDataTypePtr data)
+{
+    xmlRegFreeExecCtxt(data->execCtx);
+    xmlRegFreeExecCtxt(data->execCtx2);
 }
 
 static void
@@ -14201,8 +14259,11 @@ xmlXPathFreeSatisfiabilityExecCtxt(
         return;
     }
 
-    while (ctxt->queue.size > 0) {
-        xmlXPathQueuePop(&ctxt->queue, NULL);
+    while (ctxt->resolutionQueue.size > 0) {
+        xmlXPathQueueNodePtr endNode = (&ctxt->resolutionQueue)->end;
+
+        xmlXPathFreeQueueNodeData(&(&ctxt->resolutionQueue)->end->data);
+        xmlXPathQueuePop(&ctxt->resolutionQueue, NULL);
     }
 }
 
@@ -14213,22 +14274,26 @@ todoCallback()
 
 static int
 xmlXPathEvalSatisfiabilityOnSchema_child(
+    const _xmlQueueNodeDataTypePtr currentState,
     const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
-    const char* name,
+    const xmlXPathStepOpPtr op,
     const void* todoData
 )
 {
-    if (ctxt == NULL || name == NULL) {
+    if (ctxt == NULL || op == NULL) {
         return (-1);
     }
     int ret2;
-    ret2 = xmlRegExecHasPath(ctxt->modelExecCtxt, name);
+    const char* name = op->value5;
+    xmlRegExecCtxtPtr modelCtx = currentState->execCtx;
+
+    ret2 = xmlRegExecHasPath(modelCtx, name);
     if (ret2 <= 0) {
         xmlXPathVerifySatisfiabilityWarning(ctxt, XML_XPATH_SATISFIABILITY_NO_PATH,
             "No path possible to node \"%s\".", name, NULL);
         return ret2;
     }
-    ret2 = xmlRegExecPushString(ctxt->modelExecCtxt, name, todoData);
+    ret2 = xmlRegExecPushString(modelCtx, name, todoData);
     if (ret2 <= 0) {
         return ret2;
     }
@@ -14237,6 +14302,7 @@ xmlXPathEvalSatisfiabilityOnSchema_child(
 
 static int 
 xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
+    const _xmlQueueNodeDataType* currentState,
     const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
     const xmlXPathStepOpPtr op,
     void* todoData
@@ -14247,10 +14313,65 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
     xmlXPathTypeVal type = (xmlXPathTypeVal)op->value3;
     const xmlChar* prefix = op->value4;
     const xmlChar* name = op->value5;
-
+    xmlRegExecCtxtPtr modelCtx = currentState->execCtx;
+    xmlRegExecCtxtPtr closureCtx = currentState->execCtx2;
     int ret2;
     int ret3;
-    ret2 = xmlRegExecHasPath(ctxt->modelExecCtxt, name);
+
+    int nbStates = xmlRegexpGetNbStates(ctxt->verticalModel);
+    int curState = xmlRegExecGetState(currentState->execCtx);
+
+    if (test == NODE_TEST_ALL) {
+        return (-1);
+
+        /* TODO memory/CPU optimization: reuse the `currentState` 
+         * for the first descendant */
+
+        
+        int countDescendants = 0;
+
+        for (int i = 0; i < nbStates; i++) {
+            if (!xmlRegexpHasPath(ctxt->closure, curState, i)) {
+                continue;
+            }
+            countDescendants++;
+
+            if (countDescendants == 1) {
+                continue;
+            }
+
+            _xmlQueueNodeDataType data;
+
+            data.execCtx = xmlRegCopyExecCtxt(currentState->execCtx);
+            if (data.execCtx == NULL) {
+                xmlXPathVerifySatisfiabilityMemoryErr(
+                    "Could not allocate memory for evaluating DESCENDANT predicate."
+                );
+                return (-1);
+            }
+
+            data.execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx);
+            if (data.execCtx2 == NULL) {
+                xmlXPathVerifySatisfiabilityMemoryErr(
+                    "Could not allocate memory for evaluating DESCENDANT predicate."
+                );
+                return (-1);
+            }
+
+            data.op = currentState->op;
+        
+            ret2 = xmlXPathQueuePush(&ctxt->resolutionQueue, data);
+            if (ret2 < 0) {
+                xmlXPathVerifySatisfiabilityMemoryErr(
+                    "Could not allocate memory for creating a new "
+                    "XPath satisfiability evaluation state."
+                );
+                return (-1);
+            }
+        }
+    }
+
+    ret2 = xmlRegExecHasPath(modelCtx, name);
     if (ret2 < 0) {
         return ret2;
     }
@@ -14259,16 +14380,16 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
         /* Hack that I have made to manipulate state machines that don't contain enough transitions  */
         /* This case illustrates the case when having a descendant and we need to do the transition through the
            transitive closure. */
-        ret2 = xmlRegExecHasPath(ctxt->closureExecCtxt, name);
+        ret2 = xmlRegExecHasPath(closureCtx, name);
         if (ret2 <= 0) {
             return ret2;
         }
-        xmlRegExecSetState(ctxt->closureExecCtxt, xmlRegExecGetState(ctxt->modelExecCtxt));
-        ret3 = xmlRegExecPushString(ctxt->closureExecCtxt, name, todoData);
+        xmlRegExecSetState(currentState->execCtx2, xmlRegExecGetState(modelCtx));
+        ret3 = xmlRegExecPushString(closureCtx, name, todoData);
         if (ret3 < 0) {
             return ret3;
         }
-        xmlRegExecSetState(ctxt->modelExecCtxt, xmlRegExecGetState(ctxt->closureExecCtxt));
+        xmlRegExecSetState(modelCtx, xmlRegExecGetState(closureCtx));
         return 1;
     }
     else {
@@ -14276,8 +14397,25 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
            you should add the current `op` argument either as a function
            argument to xmlXPathEvalSatisfiabilityOnSchema_child, or
            as a member of the struct todo_xmlXPathSatisfiabilityExecCtxtPtr */
-        return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
+        return xmlXPathEvalSatisfiabilityOnSchema_child(currentState, ctxt, op, todoData);
     }
+}
+
+static int
+xmlXPathEvalSatisfiabilityOnSchema_predicate(
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    const xmlXPathStepOpPtr op,
+    void* todoData
+)
+{
+    int retVal = 0;
+    const xmlChar* madeName = "my made name :)";
+
+    xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_NOT_IMPLEMENTED,
+        "For node \"%s\": no support for predicates implemented yet\n", madeName, NULL);
+    return (-1);
+
+    return retVal;
 }
 
 static int
@@ -14298,15 +14436,23 @@ xmlXPathEvalSatisfiabilityOnSchema_collect(
 
     /* TODO evaluate predicates */
     if (op->ch2 != -1) {
-        xmlXPathStepOpPtr pred = &ctxt->comp->steps[op->ch2];
-        xmlXPathVerifySatisfiabilityError(ctxt, XML_XPATH_SATISFIABILITY_NOT_IMPLEMENTED,
-            "For node \"%s\": no support for predicates implemented yet\n", name, NULL);
-        return (-1);
+        return xmlXPathEvalSatisfiabilityOnSchema_predicate(
+            ctxt,
+            &ctxt->comp->steps[op->ch2],
+            todoData
+        );
     }
 
     switch (axis) {
     case AXIS_DESCENDANT:
-        return xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(ctxt, op, todoData);
+        return xmlXPathQueueIteratePredicates(
+            &ctxt->resolutionQueue,
+            xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant,
+            ctxt,
+            op,
+            todoData
+        );
+        /* return xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(ctxt, op, todoData); */
     case AXIS_DESCENDANT_OR_SELF:
         /* TODO evaluate both descendant AND self variants */
         return (-1);
@@ -14326,7 +14472,13 @@ xmlXPathEvalSatisfiabilityOnSchema_collect(
            you should add the current `op` argument either as a function
            argument to xmlXPathEvalSatisfiabilityOnSchema_child, or
            as a member of the struct todo_xmlXPathSatisfiabilityExecCtxtPtr */
-        return xmlXPathEvalSatisfiabilityOnSchema_child(ctxt, name, todoData);
+        return xmlXPathQueueIteratePredicates(
+            &ctxt->resolutionQueue,
+            xmlXPathEvalSatisfiabilityOnSchema_child,
+            ctxt,
+            op,
+            todoData
+        );
     default:
         xmlXPathVerifySatisfiabilityAxisNotImplementedError(ctxt, axis);
     }
@@ -14361,6 +14513,19 @@ xmlXPathEvalSatisifabilityOnSchema(
             xmlXPathVerifySatisfiabilityMemoryErr("for context of closure of vertical model\n");
             return (-1);
         }
+
+        /* Enqueue future operations to be evaluated */
+        _xmlQueueNodeDataType futureOp;
+        futureOp.execCtx = ctxt->modelExecCtxt;
+        futureOp.execCtx2 = ctxt->closureExecCtxt;
+        futureOp.op = op;
+        ret2 = xmlXPathQueuePush(&ctxt->resolutionQueue, futureOp);
+        if (ret2 < 0) {
+            xmlXPathVerifySatisfiabilityMemoryErr(
+                "Could not enqueue ROOT operation for evaluation.");
+            return (-1);
+        }
+
         return (1);
     case XPATH_OP_COLLECT:
         ret = xmlXPathEvalSatisifabilityOnSchema(ctxt, &ctxt->comp->steps[op->ch1]);
