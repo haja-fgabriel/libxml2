@@ -29628,6 +29628,8 @@ xmlSchemaCreateVerticalModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
         xmlFreeAutomata(ctxt->am);
         return (-1);
     }
+
+    return (0);
 }
 
 /**
