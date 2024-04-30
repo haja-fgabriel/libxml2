@@ -14297,6 +14297,98 @@ xmlXPathEvalSatisfiabilityPushOp(
     return retAll;
 }
 
+static int
+xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
+    const _xmlQueueNodeDataTypePtr currentState,
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    xmlXPathStepOpPtr op,
+    xmlXPathQueueCallback callback,
+    void* todoData
+)
+{
+    int nbStates = xmlRegexpGetNbStates(ctxt->verticalModel);
+    int nbStrings = xmlRegexpGetNbStrings(ctxt->verticalModel);
+    int curState = xmlRegExecGetState(currentState->execCtx);
+    int ret2;
+    int ret3 = 0;
+
+    int countDescendants = 0;
+
+    for (int i = 0; i < nbStrings; i++) {
+        int target = xmlRegexpHasPath(ctxt->closure, curState, i);
+        if (target <= 0 || target > nbStates) {
+            continue;
+        }
+        target--;
+
+        countDescendants++;
+
+        if (countDescendants == 1) {
+            /* Modify the values used for pushing in the original `currentState` */
+            char* name = xmlRegexpGetString(ctxt->closure, i);
+            xmlXPathTestVal test = NODE_TEST_NAME;
+
+            /* Initialize the `newOp` that will be used as an argument for the
+             * further evaluation using the `currentState`. */
+            op->value = AXIS_DESCENDANT;
+            op->value2 = test;
+            op->value5 = name;
+            continue;
+        }
+
+        _xmlQueueNodeDataType data;
+
+        data.execCtx = xmlRegCopyExecCtxt(currentState->execCtx);
+        if (data.execCtx == NULL) {
+            xmlXPathVerifySatisfiabilityMemoryErr(
+                "Could not allocate memory for evaluating DESCENDANT predicate."
+            );
+            return (-1);
+        }
+
+        data.execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx);
+        if (data.execCtx2 == NULL) {
+            xmlXPathVerifySatisfiabilityMemoryErr(
+                "Could not allocate memory for evaluating DESCENDANT predicate."
+            );
+            return (-1);
+        }
+
+        char* newAtom = xmlRegexpGetString(ctxt->closure, i);
+
+        /* Mutate the current state to include *only* the descendant */
+        data.op = *op;
+        data.op.value = AXIS_DESCENDANT;
+        data.op.value2 = NODE_TEST_NAME;
+        data.op.value5 = newAtom;
+
+
+        /* Run the evaluation using the newly created state */
+        ret2 = callback(&data, ctxt, &data.op, todoData);
+
+        if (ret2 < 0) {
+            xmlXPathFreeQueueNodeData(&data);
+            return (-1);
+        }
+        else if (ret2 == 0) {
+            /* Create new states that will be used for evaluation */
+            ret2 = xmlXPathQueuePush(&ctxt->resolutionQueue, data);
+            if (ret2 < 0) {
+                xmlXPathVerifySatisfiabilityMemoryErr(
+                    "Could not allocate memory for creating a new "
+                    "XPath satisfiability evaluation state."
+                );
+                return (-1);
+            }
+        }
+        else {
+            ret3 = ret2;
+        }
+    }
+
+    return ret3;
+}
+
 
 static int
 xmlXPathEvalSatisfiabilityOnSchema_child(
@@ -14310,20 +14402,56 @@ xmlXPathEvalSatisfiabilityOnSchema_child(
         return (-1);
     }
     int ret2;
-    const char* name = op->value5;
+    int ret3 = 0;
     xmlRegExecCtxtPtr modelCtx = currentState->execCtx;
 
+    /* This value will be used in case we have a test on all the
+     * descendants and we need to alter the `op` used by the `currentState`.
+     * In this case, the `name` and `test` values will also be altered. */
+    xmlXPathStepOp newOp = *op;
+    xmlXPathTestVal test = (xmlXPathTestVal)op->value2;
+
+
+    if (test == NODE_TEST_ALL) {
+        ret2 = xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
+            currentState,
+            ctxt,
+            &newOp,
+            xmlXPathEvalSatisfiabilityOnSchema_child,
+            todoData
+        );
+
+        if (ret2 < 0) {
+            return ret2;
+        }
+        else if (ret2 > 0) {
+            /* it is safe to use `newOp` in the recursive calls requiring
+             * the `op` pointer argument, as long as the lifetime of `op`
+             * is longer or equal to the one of `newOp`. */
+            op = &newOp;
+            ret3 = ret2;
+        }
+    }
+
+    const char* name = op->value5;
+
+
     ret2 = xmlRegExecHasPath(modelCtx, name);
-    if (ret2 <= 0) {
+    if (ret2 < 0) {
         xmlXPathVerifySatisfiabilityWarning(ctxt, XML_XPATH_SATISFIABILITY_NO_PATH,
             "No path possible to node \"%s\".", name, NULL);
         return ret2;
     }
-    ret2 = xmlRegExecPushString(modelCtx, name, todoData);
-    if (ret2 <= 0) {
-        return ret2;
+    else if (ret2 > 0) {
+        ret2 = xmlRegExecPushString(modelCtx, name, todoData);
+        if (ret2 < 0) {
+            return ret2;
+        }
+        else if (ret2 > 0) {
+            ret3 = ret2;
+        }
     }
-    return 1;
+    return ret3;
 }
 
 static int
@@ -14374,7 +14502,6 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
     xmlXPathTestVal test = (xmlXPathTestVal)op->value2;
     xmlXPathTypeVal type = (xmlXPathTypeVal)op->value3;
     const xmlChar* prefix = op->value4;
-    const xmlChar* name = op->value5;
     xmlRegExecCtxtPtr modelCtx = currentState->execCtx;
     xmlRegExecCtxtPtr closureCtx = currentState->execCtx2;
     int ret2;
@@ -14383,99 +14510,31 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
     /* This value will be used in case we have a test on all the
      * descendants and we need to alter the `op` used by the `currentState`.
      * In this case, the `name` and `test` values will also be altered. */
-    xmlXPathStepOp newOp;
+    xmlXPathStepOp newOp = *op;
 
-    int nbStates = xmlRegexpGetNbStates(ctxt->verticalModel);
-    int nbStrings = xmlRegexpGetNbStrings(ctxt->verticalModel);
-    int curState = xmlRegExecGetState(currentState->execCtx);
 
     if (test == NODE_TEST_ALL) {
-        int countDescendants = 0;
+        ret2 = xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
+            currentState,
+            ctxt,
+            &newOp,
+            xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant,
+            todoData
+        );
 
-        for (int i = 0; i < nbStrings; i++) {
-            int target = xmlRegexpHasPath(ctxt->closure, curState, i);
-            if (target <= 0 || target > nbStates) {
-                continue;
-            }
-            target--;
-
-            countDescendants++;
-
-            if (countDescendants == 1) {
-                /* Modify the values used for pushing in the original `currentState` */
-                name = xmlRegexpGetString(ctxt->closure, i);
-                test = NODE_TEST_NAME;
-                
-                /* Initialize the `newOp` that will be used as an argument for the
-                 * further evaluation using the `currentState`. */
-                newOp = *op;
-                newOp.value = AXIS_DESCENDANT;
-                newOp.value2 = test;
-                newOp.value5 = name;
-
-                /* it is safe to use `newOp` in the recursive calls requiring 
-                 * the `op` pointer argument, as long as the lifetime of `op` 
-                 * is longer or equal to the one of `newOp`. */
-                op = &newOp;
-
-                continue;
-            }
-
-            _xmlQueueNodeDataType data;
-
-            data.execCtx = xmlRegCopyExecCtxt(currentState->execCtx);
-            if (data.execCtx == NULL) {
-                xmlXPathVerifySatisfiabilityMemoryErr(
-                    "Could not allocate memory for evaluating DESCENDANT predicate."
-                );
-                return (-1);
-            }
-
-            data.execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx);
-            if (data.execCtx2 == NULL) {
-                xmlXPathVerifySatisfiabilityMemoryErr(
-                    "Could not allocate memory for evaluating DESCENDANT predicate."
-                );
-                return (-1);
-            }
-
-            char* newAtom = xmlRegexpGetString(ctxt->closure, i);
-
-            /* Mutate the current state to include *only* the descendant */
-            data.op = *op; 
-            data.op.value = AXIS_DESCENDANT;
-            data.op.value2 = NODE_TEST_NAME;
-            data.op.value5 = newAtom;
-        
-
-            /* Run the evaluation using the newly created state */
-            ret2 = xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
-                &data,
-                ctxt,
-                &data.op,
-                todoData
-            );
-
-            if (ret2 < 0) {
-                xmlXPathFreeQueueNodeData(&data);
-                return (-1);
-            }
-            else if (ret2 == 0) {
-                /* Create new states that will be used for evaluation */
-                ret2 = xmlXPathQueuePush(&ctxt->resolutionQueue, data);
-                if (ret2 < 0) {
-                    xmlXPathVerifySatisfiabilityMemoryErr(
-                        "Could not allocate memory for creating a new "
-                        "XPath satisfiability evaluation state."
-                    );
-                    return (-1);
-                }
-            }
-            else {
-                ret3 = ret2;
-            }
+        if (ret2 < 0) {
+            return ret2;
+        }
+        else if (ret2 > 0) {
+            /* it is safe to use `newOp` in the recursive calls requiring
+             * the `op` pointer argument, as long as the lifetime of `op`
+             * is longer or equal to the one of `newOp`. */
+            op = &newOp;
+            ret3 = ret2;
         }
     }
+
+    const xmlChar* name = op->value5;
 
     ret2 = xmlRegExecHasPath(modelCtx, name);
     if (ret2 < 0) {
