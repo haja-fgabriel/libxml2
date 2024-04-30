@@ -3665,6 +3665,7 @@ xmlRegNewExecCtxt(xmlRegexpPtr comp, xmlRegExecCallbacks callback, void *data) {
  */
 xmlRegExecCtxtPtr
 xmlRegCopyExecCtxt(xmlRegExecCtxtPtr exec) {
+    /* TODO handle for non-compact representation */
     if (exec == NULL || exec->comp == NULL || exec->comp->compact == NULL) {
         return NULL;
     }
@@ -3674,16 +3675,16 @@ xmlRegCopyExecCtxt(xmlRegExecCtxtPtr exec) {
         return NULL;
     }
     memset(newExec, 0, sizeof(xmlRegExecCtxt));
-    newExec->inputString = NULL;
-    newExec->index = 0;
+    newExec->inputString = exec->inputString;
+    newExec->index = exec->index;
     newExec->determinist = 1;
     newExec->maxRollbacks = 0;
     newExec->nbRollbacks = 0;
     newExec->rollbacks = NULL;
-    newExec->status = 0;
+    newExec->status = exec->status;
     newExec->comp = exec->comp;
-    newExec->transno = 0;
-    newExec->transcount = 0;
+    newExec->transno = exec->transno;
+    newExec->transcount = exec->transcount;
     newExec->callback = exec->callback;
     newExec->data = exec->data;
 
@@ -4548,7 +4549,8 @@ xmlRegExecErrInfo(xmlRegExecCtxtPtr exec, const xmlChar **string,
 int
 xmlRegExecGetState(xmlRegExecCtxtPtr ctxt)
 {
-    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact) {
+    /* TODO handle for non-compact representation */
+    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact == NULL) {
         return (-1);
     }
     return ctxt->index;
@@ -4557,7 +4559,8 @@ xmlRegExecGetState(xmlRegExecCtxtPtr ctxt)
 void
 xmlRegExecSetState(xmlRegExecCtxtPtr ctxt, int state)
 {
-    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact) {
+    /* TODO handle for non-compact representation */
+    if (ctxt == NULL || ctxt->comp == NULL || ctxt->comp->compact == NULL) {
         return;
     }
     ctxt->index = state;
@@ -5939,7 +5942,7 @@ xmlRegexpHasPath(xmlRegexpPtr reg, int index, int atom)
 {
     if (reg == NULL || index < 0 || atom < 0 || reg->compact == NULL)
         return (-1);
-    return reg->compact[index * (reg->nbstates + 1) + atom + 1];
+    return reg->compact[index * (reg->nbstrings + 1) + atom + 1];
 }
 
 /**
