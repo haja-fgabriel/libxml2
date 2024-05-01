@@ -14294,6 +14294,34 @@ xmlXPathEvalSatisfiabilityPushOp(
 }
 
 static int
+xmlXPathEvalSatisfiabilityDuplicateState(
+    const _xmlQueueNodeDataType* currentState,
+    xmlXPathStepOpPtr op,
+    _xmlQueueNodeDataTypePtr data
+)
+{
+    data->execCtx = xmlRegCopyExecCtxt(currentState->execCtx);
+    if (data->execCtx == NULL) {
+        xmlXPathVerifySatisfiabilityMemoryErr(
+            "Could not allocate memory for evaluating DESCENDANT predicate."
+        );
+        return (-1);
+    }
+
+    data->execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx);
+    if (data->execCtx2 == NULL) {
+        xmlXPathVerifySatisfiabilityMemoryErr(
+            "Could not allocate memory for evaluating DESCENDANT predicate."
+        );
+        return (-1);
+    }
+
+    data->op = *op;
+
+    return (0);
+}
+
+static int
 xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
     const _xmlQueueNodeDataTypePtr currentState,
     const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
@@ -14333,27 +14361,13 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
         }
 
         _xmlQueueNodeDataType data;
-
-        data.execCtx = xmlRegCopyExecCtxt(currentState->execCtx);
-        if (data.execCtx == NULL) {
-            xmlXPathVerifySatisfiabilityMemoryErr(
-                "Could not allocate memory for evaluating DESCENDANT predicate."
-            );
-            return (-1);
+        ret2 = xmlXPathEvalSatisfiabilityDuplicateState(currentState, firstOp, &data);
+        if (ret2 < 0) {
+            return ret2;
         }
-
-        data.execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx);
-        if (data.execCtx2 == NULL) {
-            xmlXPathVerifySatisfiabilityMemoryErr(
-                "Could not allocate memory for evaluating DESCENDANT predicate."
-            );
-            return (-1);
-        }
-
         char* newAtom = xmlRegexpGetString(ctxt->closure, i);
 
         /* Mutate the current state to include *only* the descendant */
-        data.op = *firstOp;
         data.op.value = AXIS_DESCENDANT;
         data.op.value2 = NODE_TEST_NAME;
         data.op.value5 = newAtom;
@@ -14568,36 +14582,34 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendantOrSelf(
     void* todoData
 )
 {
-    _xmlQueueNodeDataType data;
     int ret2;
+    int ret3 = 0;
+    _xmlQueueNodeDataType data;
 
-    data.execCtx = xmlRegCopyExecCtxt(currentState->execCtx);
-    if (data.execCtx == NULL) {
-        xmlXPathVerifySatisfiabilityMemoryErr(
-            "Could not allocate memory for evaluating DESCENDANT predicate."
-        );
-        return (-1);
-    }
-
-    data.execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx);
-    if (data.execCtx2 == NULL) {
-        xmlXPathVerifySatisfiabilityMemoryErr(
-            "Could not allocate memory for evaluating DESCENDANT predicate."
-        );
-        return (-1);
+    ret2 = xmlXPathEvalSatisfiabilityDuplicateState(currentState, op, &data);
+    if (ret2 < 0) {
+        return ret2;
     }
 
     /* Mutate the current state to include *only* the descendant */
-    data.op = *op;
     data.op.value = AXIS_SELF;
 
-    int ret3 = 0;
-    ret2 = xmlXPathQueuePush(&ctxt->resolutionQueue, data);
+    ret2 = xmlXPathEvalSatisfiabilityOnSchema_collect_axisSelf(
+        &data,
+        ctxt,
+        &data.op,
+        todoData
+    );
+
     if (ret2 < 0) {
         return ret2;
     }
     else if (ret2 > 0) {
         ret3 = ret2;
+        ret2 = xmlXPathQueuePush(&ctxt->resolutionQueue, data);
+        if (ret2 < 0) {
+            return ret2;
+        }
     }
 
     /* TODO transform current firstOp into descendant and add another
