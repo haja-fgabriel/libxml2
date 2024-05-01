@@ -14259,11 +14259,7 @@ xmlXPathEvalSatisfiabilityPushOp(
     xmlXPathQueueCallback callback = xmlXPathEvalSatisfiabilityGetCallback_collect(op);
 
     if (callback == NULL) {
-        xmlXPathVerifySatisfiabilityAxisNotImplementedError(
-            ctxt,
-            op->value
-        );
-
+        xmlXPathVerifySatisfiabilityAxisNotImplementedError(ctxt, op->value);
         return (-1);
     }
 
@@ -14301,7 +14297,7 @@ static int
 xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
     const _xmlQueueNodeDataTypePtr currentState,
     const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
-    xmlXPathStepOpPtr op,
+    xmlXPathStepOpPtr firstOp,
     xmlXPathQueueCallback callback,
     void* todoData
 )
@@ -14330,9 +14326,9 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
 
             /* Initialize the `newOp` that will be used as an argument for the
              * further evaluation using the `currentState`. */
-            op->value = AXIS_DESCENDANT;
-            op->value2 = test;
-            op->value5 = name;
+            firstOp->value = AXIS_DESCENDANT;
+            firstOp->value2 = test;
+            firstOp->value5 = name;
             continue;
         }
 
@@ -14357,7 +14353,7 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
         char* newAtom = xmlRegexpGetString(ctxt->closure, i);
 
         /* Mutate the current state to include *only* the descendant */
-        data.op = *op;
+        data.op = *firstOp;
         data.op.value = AXIS_DESCENDANT;
         data.op.value2 = NODE_TEST_NAME;
         data.op.value5 = newAtom;
@@ -14452,19 +14448,6 @@ xmlXPathEvalSatisfiabilityOnSchema_child(
         }
     }
     return ret3;
-}
-
-static int
-xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendantOrSelf(
-    const _xmlQueueNodeDataType* currentState,
-    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
-    xmlXPathStepOpPtr op,
-    void* todoData
-)
-{
-    /* TODO transform current op into descendant and add another 
-     * state in the queue with the `self` axis */
-    return (-1);
 }
 
 static int
@@ -14574,6 +14557,63 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
         }
     }
 
+    return ret3;
+}
+
+static int
+xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendantOrSelf(
+    const _xmlQueueNodeDataType* currentState,
+    const todo_xmlXPathSatisfiabilityExecCtxtPtr ctxt,
+    xmlXPathStepOpPtr op,
+    void* todoData
+)
+{
+    _xmlQueueNodeDataType data;
+    int ret2;
+
+    data.execCtx = xmlRegCopyExecCtxt(currentState->execCtx);
+    if (data.execCtx == NULL) {
+        xmlXPathVerifySatisfiabilityMemoryErr(
+            "Could not allocate memory for evaluating DESCENDANT predicate."
+        );
+        return (-1);
+    }
+
+    data.execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx);
+    if (data.execCtx2 == NULL) {
+        xmlXPathVerifySatisfiabilityMemoryErr(
+            "Could not allocate memory for evaluating DESCENDANT predicate."
+        );
+        return (-1);
+    }
+
+    /* Mutate the current state to include *only* the descendant */
+    data.op = *op;
+    data.op.value = AXIS_SELF;
+
+    int ret3 = 0;
+    ret2 = xmlXPathQueuePush(&ctxt->resolutionQueue, data);
+    if (ret2 < 0) {
+        return ret2;
+    }
+    else if (ret2 > 0) {
+        ret3 = ret2;
+    }
+
+    /* TODO transform current firstOp into descendant and add another
+     * state in the queue with the `self` axis */
+    ret2 = xmlXPathEvalSatisfiabilityOnSchema_collect_axisDescendant(
+        currentState,
+        ctxt,
+        op,
+        todoData
+    );
+    if (ret2 < 0) {
+        return ret2;
+    }
+    else if (ret2 > 0) {
+        ret3 = ret2;
+    }
     return ret3;
 }
 
