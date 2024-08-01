@@ -246,6 +246,10 @@ XMLPUBFUN void
 XMLPUBFUN int
             xmlSchemaVerifyXPath         (xmlSchemaVerifyXPathCtxtPtr ctxt);
 
+XMLPUBFUN void
+            xmlSchemaPrintVerifyXPathCtxt(FILE* output, 
+                                          xmlSchemaVerifyXPathCtxtPtr ctxt);
+
 #endif /* LIBXML_XPATH_ENABLED */
 
 /*

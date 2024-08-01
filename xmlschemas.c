@@ -1104,6 +1104,8 @@ struct _xmlSchemaVerifyXPathCtxt {
     xmlSchemaValidCtxtPtr schemaCtxt;
     const char* xpath;
     xmlRegexpPtr verticalModel;             /* The state machine that represents the vertical slices inside XML documents */
+    xmlRegexpPtr transitiveClosure;         /* The state machine that represents the closure of vertical slices inside XML documents;
+                                             * required for the evaluation of descendant::* expressions (or '//' operator) */
 
     xmlAutomataPtr am;                      /* The finite automata associated with the vertical document model */
     xmlAutomataStatePtr start;
@@ -29317,6 +29319,7 @@ xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt)
 xmlSchemaVerifyXPathCtxtPtr
 xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str)
 {
+    int ret;
     xmlSchemaVerifyXPathCtxtPtr ctxt = xmlMalloc(sizeof(xmlSchemaVerifyXPathCtxt));
     if (ctxt == NULL) {
         return NULL;
@@ -29344,11 +29347,33 @@ xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str
         return NULL;
     }
 
-
     ctxt->rootElemDecl = rootElemDecl;
     ctxt->otherElemDecl = otherElemDecl;
     ctxt->schemaCtxt = schemaCtxt;
     ctxt->xpath = xpathCopy;
+
+    ret = xmlSchemaCreateVerticalModelForVerifyXPath(ctxt);
+    if (ret < 0) {
+        xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
+            "Could not create the vertical model.\n", NULL, NULL);
+        xmlFree(rootElemDecl);
+        xmlFree(xpathCopy);
+        xmlFree(ctxt);
+        return NULL;
+    }
+
+    xmlRegexpPtr transitiveClosure = xmlRegexpBuildTransitiveClosure(ctxt->verticalModel);
+    if (transitiveClosure == NULL) {
+        xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
+            "Could not create the transitive closure of the vertical model.\n", NULL, NULL);
+        xmlRegFreeRegexp(ctxt->verticalModel);
+        xmlFreeAutomata(ctxt->am);
+        xmlFree(rootElemDecl);
+        xmlFree(xpathCopy);
+        xmlFree(ctxt);
+        return NULL;
+    }
+
     return ctxt;
 }
 
@@ -29363,6 +29388,12 @@ xmlSchemaFreeVerifyXPathCtxt(xmlSchemaVerifyXPathCtxtPtr ctxt)
         xmlHashFree(ctxt->otherElemDecl, NULL);
     if (ctxt->xpath)
         xmlFree(ctxt->xpath);
+    if (ctxt->am)
+        xmlFreeAutomata(ctxt->am);
+    if (ctxt->transitiveClosure)
+        xmlRegFreeRegexp(ctxt->transitiveClosure);
+    if (ctxt->verticalModel)
+        xmlRegFreeRegexp(ctxt->verticalModel);
     xmlFree(ctxt);
 }
 
@@ -29490,6 +29521,7 @@ xmlSchemaBuildSchemaModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr pctxt,
                 (xmlSchemaParticlePtr)sub);
             if (tmp2 == 1) ret = 1;
             else if (tmp2 < 0) {
+                /* TODO handle error using a proper error function */
                 fprintf(stderr, "try to handle error when creating vertical model here\n");
                 return (-1);
             }
@@ -29525,13 +29557,13 @@ xmlSchemaBuildSchemaModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr pctxt,
 
             if (newState == NULL) {
                 pctxt->nbErrors++;
-                /* TODO improve logging for errors */
+                /* TODO handle error using a proper error function */
                 fprintf(stderr, "TODO handle when new transition cannot be created from the vertical model\n");
                 return (-1);
             }
             if (elemState == NULL) {
                 if (xmlHashAddEntry(pctxt->otherElemDecl, elemDecl->name, newState) < 0) {
-                    /* TODO improve logging for errors */
+                    /* TODO handle error using a proper error function */
                     fprintf(stderr, "Error while adding new state in otherElemDecl hash table\n");
                     return (-1);
                 }
@@ -29653,28 +29685,25 @@ xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     }
     
     int ret; 
-    ret = xmlSchemaCreateVerticalModelForVerifyXPath(ctxt);
-    if (ret < 0) {
-        xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
-            "Could not create the vertical model.\n", NULL, NULL);
-        return (-1);
-    }
-
-    xmlRegexpPtr transitiveClosure = xmlRegexpBuildTransitiveClosure(ctxt->verticalModel);
-    if (transitiveClosure == NULL) {
-        xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
-            "Could not create the transitive closure of the vertical model.\n", NULL, NULL);
-        xmlRegFreeRegexp(ctxt->verticalModel);
-        xmlFreeAutomata(ctxt->am);
-        return (-1);
-    }
 
     /* TODO verification for relative XPath queries*/
-    ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->verticalModel, transitiveClosure);
+    ret = xmlXPathIsSatisfiableOnSchema(NULL, ctxt->xpath, ctxt->verticalModel, ctxt->transitiveClosure);
 
-    xmlRegFreeRegexp(transitiveClosure);
-    xmlRegFreeRegexp(ctxt->verticalModel);
     return ret;
+}
+
+void
+xmlSchemaPrintVerifyXPathCtxt(FILE* output, xmlSchemaVerifyXPathCtxtPtr ctxt)
+{
+    if (output == NULL || ctxt == NULL) {
+        return;
+    }
+
+    fprintf(output, "Vertical model:\n");
+    xmlRegexpPrint(output, ctxt->verticalModel);
+
+    fprintf(output, "Transitive closure:\n");
+    xmlRegexpPrint(output, ctxt->transitiveClosure);
 }
 
 
