@@ -1138,6 +1138,21 @@ xmlRegPrintAtom(FILE *output, xmlRegAtomPtr atom) {
 }
 
 static void
+xmlRegPrintAtomCompact(FILE* output, xmlRegexpPtr regexp, int atom)
+{
+    if (output == NULL || regexp == NULL || atom < 0 ||
+        atom >= regexp->nbstrings) {
+        return;
+    }
+    fprintf(output, " atom: ");
+
+    xmlRegPrintAtomType(output, XML_REGEXP_STRING);
+    xmlRegPrintQuantType(output, XML_REGEXP_QUANT_ONCE);
+    fprintf(output, "'%s' ", (char*)regexp->stringMap[atom]);
+    fprintf(output, "\n");
+}
+
+static void
 xmlRegPrintTrans(FILE *output, xmlRegTransPtr trans) {
     fprintf(output, "  trans: ");
     if (trans == NULL) {
@@ -1172,6 +1187,59 @@ xmlRegPrintTrans(FILE *output, xmlRegTransPtr trans) {
 }
 
 static void
+xmlRegPrintTransCompact(
+    FILE* output,
+    xmlRegexpPtr regexp,
+    int state,
+    int atom
+)
+{
+    int target;
+    if (output == NULL || regexp == NULL || regexp->compact == NULL ||
+        state < 0 || atom < 0) {
+        return;
+    }
+    target = regexp->compact[state * (regexp->nbstrings + 1) + atom + 1];
+    fprintf(output, "  trans: ");
+
+    /* TODO maybe skip 'removed' transitions, because they actually never existed */
+    if (target < 0) {
+        fprintf(output, "removed\n");
+        return;
+    }
+
+    /* We will ignore most of the attributes used in xmlRegPrintTrans,
+     * since the compact form is much simpler and uses only a part of the
+     * features provided by the libxml2 regexp libary
+     * (no rollbacks, counters etc.) */
+
+     /* Compared to the standard representation, an automata written using the
+      * compact form will ALWAYS be deterministic!
+      * From xmlRegPrintTrans:
+          if (trans->nd != 0) {
+                     ...
+      * trans->nd will always be 0! */
+
+      /* In automata represented in compact form, the transitions will not use
+       * counters.
+       * From xmlRegPrintTrans:
+           if (trans->counter >= 0) {
+                      ...
+       * regexp->counters == NULL, so trans->counter < 0 */
+
+       /* In compact form, we won't use */
+
+       /* An automata in the compact representation will always use string
+        * atoms.
+        * From xmlRegPrintTrans:
+            if (trans->atom->type == XML_REGEXP_CHARVAL)
+                       ...
+        * trans->atom != NULL && trans->atom->type == XML_REGEXP_STRING */
+
+    fprintf(output, "atom %d, to %d\n", atom, target);
+}
+
+static void
 xmlRegPrintState(FILE *output, xmlRegStatePtr state) {
     int i;
 
@@ -1189,6 +1257,85 @@ xmlRegPrintState(FILE *output, xmlRegStatePtr state) {
     for (i = 0;i < state->nbTrans; i++) {
 	xmlRegPrintTrans(output, &(state->trans[i]));
     }
+}
+
+static void
+xmlRegPrintStateCompact(FILE* output, xmlRegexpPtr regexp, int state)
+{
+    int nbTrans = 0;
+    int i;
+    int target;
+
+    if (output == NULL || regexp == NULL || regexp->compact == NULL ||
+        state < 0) {
+        return;
+    }
+
+    xmlRegStateType stateType = regexp->compact[state * (regexp->nbstrings + 1)];
+    fprintf(output, " state: ");
+    if (stateType == XML_REGEXP_START_STATE) {
+        fprintf(output, " START ");
+    }
+
+    if (stateType == XML_REGEXP_FINAL_STATE) {
+        fprintf(output, " FINAL ");
+    }
+
+    /* Print all atoms. */
+    for (i = 0; i < regexp->nbstrings; i++) {
+        xmlRegPrintAtomCompact(output, regexp, i);
+    }
+
+    /* Count all the transitions from the compact representation. */
+    for (i = 0; i < regexp->nbstrings; i++) {
+        target = regexp->compact[state * (regexp->nbstrings + 1) + i + 1];
+        if (target > 0 && target <= regexp->nbstates &&
+            regexp->compact[(target - 1) * (regexp->nbstrings + 1)] ==
+            XML_REGEXP_SINK_STATE) {
+            nbTrans++;
+        }
+    }
+
+    fprintf(output, "%d, %d transitions:\n", state, nbTrans);
+
+    /* Print all transitions */
+    for (i = 0; i < regexp->nbstrings; i++) {
+        xmlRegPrintTransCompact(output, regexp, state, i);
+    }
+
+    /* TODO xmlRegPrintTransCompact */
+}
+
+/*
+ * xmlRegPrintCompact
+ * @output an output stream
+ * @regexp the regexp instance
+ *
+ * Print the compact representation of a regexp, in the same fashion as the
+ * public xmlRegexpPrint function.
+ */
+static void
+xmlRegPrintCompact(FILE* output, xmlRegexpPtr regexp)
+{
+    /* We know what happened to CrowdStrike because of improper data validation */
+    int i;
+    if (output == NULL || regexp == NULL || regexp->compact == NULL) {
+        return;
+    }
+
+    fprintf(output, "'%s' ", regexp->string);
+    fprintf(output, "%d states:", regexp->nbstates);
+    fprintf(output, "\n");
+
+    fprintf(output, "%d atoms:\n", regexp->nbAtoms);
+    /* TODO print atoms */
+
+    for (i = 0; i < regexp->nbstates; i++) {
+        xmlRegPrintStateCompact(output, regexp, i);
+    }
+
+    /* Compact form of automata does not use counters, nor ranges */
+    fprintf(output, "%d counters:\n", 0);
 }
 
 #ifdef DEBUG_REGEXP_GRAPH
@@ -5727,6 +5874,12 @@ xmlRegexpPrint(FILE *output, xmlRegexpPtr regexp) {
 	fprintf(output, "NULL\n");
 	return;
     }
+
+    if (regexp->compact) {
+        xmlRegPrintCompact(output, regexp);
+        return;
+    }
+
     fprintf(output, "'%s' ", regexp->string);
     fprintf(output, "\n");
     fprintf(output, "%d atoms:\n", regexp->nbAtoms);
