@@ -1327,7 +1327,7 @@ xmlRegPrintCompact(FILE* output, xmlRegexpPtr regexp)
     fprintf(output, "%d states:", regexp->nbstates);
     fprintf(output, "\n");
 
-    fprintf(output, "%d atoms:\n", regexp->nbAtoms);
+    fprintf(output, "%d atoms:\n", regexp->nbstrings);
     /* TODO print atoms */
 
     for (i = 0; i < regexp->nbstates; i++) {
