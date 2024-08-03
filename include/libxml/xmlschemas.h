@@ -229,6 +229,13 @@ XMLPUBFUN xmlSchemaVerifyXPathCtxtPtr
                 const xmlChar* str);
 
 XMLPUBFUN void
+            xmlSchemaVerifyXPathCtxtSetXPath(xmlSchemaVerifyXPathCtxtPtr ctxt,
+                                          const xmlChar* str);
+
+XMLPUBFUN xmlSchemaValidCtxtPtr
+            xmlSchemaVerifyXPathCtxtGetValidCtxt(xmlSchemaVerifyXPathCtxtPtr ctxt);
+
+XMLPUBFUN void
             xmlSchemaFreeVerifyXPathCtxt(xmlSchemaVerifyXPathCtxtPtr ctxt);
 
 XMLPUBFUN void

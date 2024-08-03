@@ -29320,20 +29320,28 @@ xmlSchemaVerifyXPathCtxtPtr
 xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str)
 {
     int ret;
+    xmlChar* xpathCopy = NULL;
+
     xmlSchemaVerifyXPathCtxtPtr ctxt = xmlMalloc(sizeof(xmlSchemaVerifyXPathCtxt));
     if (ctxt == NULL) {
         return NULL;
     }
     memset(ctxt, 0, sizeof(xmlSchemaVerifyXPathCtxt));
 
-    xmlChar* xpathCopy = xmlStrdup(str);
-    if (xpathCopy == NULL) {
-        xmlFree(ctxt);
-        return NULL;
+    if (str) {
+        xpathCopy = xmlStrdup(str);
+        if (xpathCopy == NULL) {
+            xmlSchemaVerifyXPathErr(ctxt, XML_ERR_NO_MEMORY,
+                "Could not create a copy of the XPath query string.\n", NULL, NULL);
+            xmlFree(ctxt);
+            return NULL;
+        }
     }
 
     xmlHashTablePtr rootElemDecl = xmlHashCreate(xmlHashSize(schemaCtxt->schema->elemDecl));
     if (rootElemDecl == NULL) {
+        xmlSchemaVerifyXPathErr(ctxt, XML_ERR_NO_MEMORY,
+            "Could not create the hash table for the root elements of the schema.\n", NULL, NULL);
         xmlFree(xpathCopy);
         xmlFree(ctxt);
         return NULL;
@@ -29341,6 +29349,8 @@ xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str
 
     xmlHashTablePtr otherElemDecl = xmlHashCreate(xmlHashSize(schemaCtxt->schema->elemDecl));
     if (otherElemDecl == NULL) {
+        xmlSchemaVerifyXPathErr(ctxt, XML_ERR_NO_MEMORY,
+            "Could not create the hash table for the other elements of the schema.\n", NULL, NULL);
         xmlFree(rootElemDecl);
         xmlFree(xpathCopy);
         xmlFree(ctxt);
@@ -29664,6 +29674,27 @@ xmlSchemaCreateVerticalModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
     return (0);
 }
 
+void
+xmlSchemaVerifyXPathCtxtSetXPath(xmlSchemaVerifyXPathCtxtPtr ctxt,
+    const xmlChar* str)
+{
+    if (ctxt == NULL) {
+        return;
+    }
+
+    ctxt->xpath = str;
+}
+
+xmlSchemaValidCtxtPtr
+xmlSchemaVerifyXPathCtxtGetValidCtxt(xmlSchemaVerifyXPathCtxtPtr ctxt)
+{
+    if (ctxt == NULL) {
+        return NULL;
+    }
+
+    return ctxt->schemaCtxt;
+}
+
 /**
  * xmlSchemaVerifyXPath:
  * @ctxt: a schema validation context
@@ -29680,7 +29711,8 @@ xmlSchemaCreateVerticalModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt)
 int 
 xmlSchemaVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt) 
 {
-    if (ctxt == NULL) {
+    if (ctxt == NULL || ctxt->xpath == NULL || ctxt->verticalModel == NULL ||
+        ctxt->transitiveClosure == NULL) {
         return (-1);
     }
     
