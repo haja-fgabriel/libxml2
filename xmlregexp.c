@@ -484,12 +484,12 @@ xmlRegEpxFromParse(xmlRegParserCtxtPtr ctxt) {
 	(ret->atoms[0] != NULL) &&
 	(ret->atoms[0]->type == XML_REGEXP_STRING)) {
 	int i, j, nbstates = 0, nbatoms = 0;
-	int *stateRemap;
-	int *stringRemap;
-	int *transitions;
-	void **transdata;
-	xmlChar **stringMap;
-        xmlChar *value;
+	int *stateRemap = NULL;
+	int *stringRemap = NULL;
+	int *transitions = NULL;
+	void **transdata = NULL;
+        xmlChar** stringMap = NULL;
+        xmlChar* value = NULL;
 
 	/*
 	 * Switch to a compact representation
@@ -1281,11 +1281,6 @@ xmlRegPrintStateCompact(FILE* output, xmlRegexpPtr regexp, int state)
         fprintf(output, " FINAL ");
     }
 
-    /* Print all atoms. */
-    for (i = 0; i < regexp->nbstrings; i++) {
-        xmlRegPrintAtomCompact(output, regexp, i);
-    }
-
     /* Count all the transitions from the compact representation. */
     for (i = 0; i < regexp->nbstrings; i++) {
         target = regexp->compact[state * (regexp->nbstrings + 1) + i + 1];
@@ -1323,13 +1318,17 @@ xmlRegPrintCompact(FILE* output, xmlRegexpPtr regexp)
         return;
     }
 
-    fprintf(output, "'%s' ", regexp->string);
+    fprintf(output, "'%s' \n", regexp->string);
+
+    /* Print all atoms. */
+    fprintf(output, "%d atoms:\n", regexp->nbstrings);
+    for (i = 0; i < regexp->nbstrings; i++) {
+        fprintf(output, " %02d ", i);
+        xmlRegPrintAtomCompact(output, regexp, i);
+    }
+
     fprintf(output, "%d states:", regexp->nbstates);
     fprintf(output, "\n");
-
-    fprintf(output, "%d atoms:\n", regexp->nbstrings);
-    /* TODO print atoms */
-
     for (i = 0; i < regexp->nbstates; i++) {
         xmlRegPrintStateCompact(output, regexp, i);
     }
@@ -5860,7 +5859,7 @@ xmlFAParseRegExp(xmlRegParserCtxtPtr ctxt, int top) {
  * xmlRegexpPrint:
  * @output: the file for the output debug
  * @regexp: the compiled regexp
- *
+ * 
  * Print the content of the compiled regular expression
  */
 void
