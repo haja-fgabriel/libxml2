@@ -29373,6 +29373,7 @@ xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str
     }
 
     xmlRegexpPtr transitiveClosure = xmlRegexpBuildTransitiveClosure(ctxt->verticalModel);
+    ctxt->transitiveClosure = transitiveClosure;
     if (transitiveClosure == NULL) {
         xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
             "Could not create the transitive closure of the vertical model.\n", NULL, NULL);
@@ -29527,6 +29528,7 @@ xmlSchemaBuildSchemaModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr pctxt,
         sub = particle->children->children;
         while (sub != NULL) {
             pctxt->state = oldstate;
+            /* TODO do not add for maxOccurs="0" */
             tmp2 = xmlSchemaBuildSchemaModelForVerifyXPath(pctxt,
                 (xmlSchemaParticlePtr)sub);
             if (tmp2 == 1) ret = 1;
@@ -29731,11 +29733,15 @@ xmlSchemaPrintVerifyXPathCtxt(FILE* output, xmlSchemaVerifyXPathCtxtPtr ctxt)
         return;
     }
 
-    fprintf(output, "Vertical model:\n");
-    xmlRegexpPrint(output, ctxt->verticalModel);
+    if (ctxt->verticalModel) {
+        fprintf(output, "Vertical model:\n");
+        xmlRegexpPrint(output, ctxt->verticalModel);
+    }
 
-    fprintf(output, "Transitive closure:\n");
-    xmlRegexpPrint(output, ctxt->transitiveClosure);
+    if (ctxt->transitiveClosure) {
+        fprintf(output, "Transitive closure:\n");
+        xmlRegexpPrint(output, ctxt->transitiveClosure);
+    }
 }
 
 
