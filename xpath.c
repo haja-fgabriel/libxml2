@@ -14264,7 +14264,7 @@ xmlXPathEvalSatisfiabilityPushOp(
     }
 
     int ret;
-    int retAll = 1;
+    int retAll = 0;
 
     xmlXPathQueueNodePtr node = queue->start;
     xmlXPathQueueNodePtr end = queue->end;
@@ -14279,11 +14279,11 @@ xmlXPathEvalSatisfiabilityPushOp(
         if (ret < 0) {
             return (-1);
         }
-        else if (ret == 0) {
-            retAll = 0;
+        else if (ret == 1) {
+            retAll = 1;
         }
 
-        /* Do not iterate through nodes that have been added in the callback */
+        /* Do not iterate through nodes that have just been added in the callback */
         if (node == end) {
             break;
         }
@@ -14308,7 +14308,7 @@ xmlXPathEvalSatisfiabilityDuplicateState(
         return (-1);
     }
 
-    data->execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx);
+    data->execCtx2 = xmlRegCopyExecCtxt(currentState->execCtx2);
     if (data->execCtx2 == NULL) {
         xmlXPathVerifySatisfiabilityMemoryErr(
             "Could not allocate memory for evaluating DESCENDANT predicate."
@@ -14380,7 +14380,8 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
             xmlXPathFreeQueueNodeData(&data);
             return (-1);
         }
-        else if (ret2 == 0) {
+        else if (ret2 > 0) {
+            ret3 = ret2;
             /* Create new states that will be used for evaluation */
             ret2 = xmlXPathQueuePush(&ctxt->resolutionQueue, data);
             if (ret2 < 0) {
@@ -14390,9 +14391,6 @@ xmlXPathEvalSatisfiabilityOnSchema_collect_enqueueTestAll(
                 );
                 return (-1);
             }
-        }
-        else {
-            ret3 = ret2;
         }
     }
 

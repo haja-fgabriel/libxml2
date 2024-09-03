@@ -29316,6 +29316,17 @@ xmlSchemaValidCtxtGetParserCtxt(xmlSchemaValidCtxtPtr ctxt)
 
 #ifdef LIBXML_XPATH_ENABLED
 
+/* Add function declarations above to avoid compiler warnings */
+static int
+xmlSchemaCreateVerticalModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr ctxt);
+
+static void
+xmlSchemaAddPathsToChildrenInClosure(void* payload, void* output,
+    const xmlChar* name ATTRIBUTE_UNUSED,
+    const xmlChar* namespace ATTRIBUTE_UNUSED,
+    const xmlChar* context ATTRIBUTE_UNUSED);
+
+
 xmlSchemaVerifyXPathCtxtPtr
 xmlSchemaNewVerifyXPathCtxt(xmlSchemaValidCtxtPtr schemaCtxt, const xmlChar* str)
 {
@@ -29574,13 +29585,21 @@ xmlSchemaBuildSchemaModelForVerifyXPath(xmlSchemaVerifyXPathCtxtPtr pctxt,
                 return (-1);
             }
             if (elemState == NULL) {
+                int asdasd;
+                if (strcmp(elemDecl->name, "closed_auctions") == 0) {
+                    asdasd = 1;
+                }
                 if (xmlHashAddEntry(pctxt->otherElemDecl, elemDecl->name, newState) < 0) {
                     /* TODO handle error using a proper error function */
                     fprintf(stderr, "Error while adding new state in otherElemDecl hash table\n");
                     return (-1);
                 }
-                xmlAutomataSetFinalState(pctxt->am, elemState);
-            } 
+                xmlAutomataSetFinalState(pctxt->am, newState);
+                xmlSchemaAddPathsToChildrenInClosure(elemDecl, pctxt, NULL, NULL, NULL);
+                if (pctxt->nbErrors > 1) {
+                    return (-1);
+                }
+            }
         }
         
         break;
@@ -29612,31 +29631,37 @@ xmlSchemaAddPathsToChildrenInClosure(void* payload, void* output,
     const xmlChar* namespace ATTRIBUTE_UNUSED,
     const xmlChar* context ATTRIBUTE_UNUSED)
 {
-    xmlSchemaTypePtr type = (xmlSchemaTypePtr)payload;
+    xmlSchemaElementPtr type = (xmlSchemaElementPtr)payload;
     xmlSchemaVerifyXPathCtxtPtr ctxt = (xmlSchemaVerifyXPathCtxtPtr)output;
+    xmlAutomataStatePtr state = NULL;
     if (ctxt->nbErrors > 0) {
         return;
     }
     if (type->node && type->node->parent && type->node->parent->name &&
         xmlStrEqual(type->node->parent->name, "schema")) {
-        xmlAutomataStatePtr state = xmlHashLookup(ctxt->rootElemDecl, type->name); 
+        state = xmlHashLookup(ctxt->rootElemDecl, type->name);
         if (state == NULL) {
             xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
                 "Could not map potential document root \"%s\" to automata state.\n", type->name, NULL);
             return;
         }
         ctxt->state = state;
-
-        if (xmlSchemaBuildSchemaModelForVerifyXPath(ctxt, WXS_TYPE_PARTICLE(type->subtypes)) < 0) {
-            xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
-                "Could not add transition for node \"%s\" to other nodes.\n", type->name, NULL);
-            return;
-        }
     }
     else {
-        printf("ok, we have element that cannot be root in the XML document\n");
+        state = xmlHashLookup(ctxt->otherElemDecl, type->name);
+        if (state == NULL) {
+            xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
+                "Could not map locally declared element \"%s\" to automata state.\n", type->name, NULL);
+            return;
+        }
+        ctxt->state = state;
     }
 
+    if (xmlSchemaBuildSchemaModelForVerifyXPath(ctxt, WXS_TYPE_PARTICLE(type->subtypes)) < 0) {
+        xmlSchemaVerifyXPathErr(ctxt, XML_SCHEMAV_XPATHV_VERTICAL_MODEL_FAILURE,
+            "Could not add transition for node \"%s\" to other nodes.\n", type->name, NULL);
+        return;
+    }
     /* TODO TBD */
     return;
 }
